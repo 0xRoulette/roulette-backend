@@ -131,8 +131,6 @@ async function listenToBets() {
 
                     // Используем декодированные данные
                     const event = decodedEventData;
-                    console.log('[ManualDecode] Decoded event object:', JSON.stringify(event, null, 2)); // <<< ДОБАВЬ ЭТУ СТРОКУ
-
 
                     // Проверяем, не обработали ли мы уже эту транзакцию
                     const existingBet = await BetModel.findOne({ signature: signature }); // Используем signature из logsResult
@@ -142,7 +140,7 @@ async function listenToBets() {
                     }
 
                     // Извлекаем данные из декодированного события 'event'
-                    const { player, tokenMint, round, bets, timestamp } = event;
+                    const { player, tokenMint, round, bets, timestamp } = event.data; 
 
                     // Готовим промисы для сохранения каждой ставки из события
                     const betPromises = bets.map(betDetail => {
