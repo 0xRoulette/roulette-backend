@@ -39,10 +39,14 @@ io.on('connection', (socket) => {
     // Здесь можно будет добавить обработчики событий от клиента, если нужно
 });
 
-server.listen(PORT, () => { // <<< Убираем async
+server.listen(PORT, () => {
     console.log(`Server listening on *:${PORT}`);
-    // <<<--- Удаляем весь блок try/catch с fetchHistoricalBets ---<<<
-    listenToBets(); // <<< Просто вызываем слушатель событий напрямую
+    // Добавляем задержку в 1 секунду перед запуском слушателя
+    console.log("Waiting 3 seconds before attaching event listener...");
+    setTimeout(() => {
+        console.log("Attaching event listener now...");
+        listenToBets();
+    }, 1000); // 1000 миллисекунд = 1 секунда
 });
 
 // --- Логика для Solana ---
