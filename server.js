@@ -42,7 +42,7 @@ io.on('connection', (socket) => {
 server.listen(PORT, () => {
     console.log(`Server listening on *:${PORT}`);
     // Добавляем задержку в 1 секунду перед запуском слушателя
-    console.log("Waiting 3 seconds before attaching event listener...");
+    console.log("Waiting 1 second before attaching event listener...");
     setTimeout(() => {
         console.log("Attaching event listener now...");
         listenToBets();
@@ -103,13 +103,14 @@ async function listenToBets() {
                     // Парсим логи с помощью нашего eventParser
                     const parsedEvents = [];
                     eventParser.parseLogs(logs, (eventLog) => {
-                         // <<<--- ВОЗВРАЩАЕМ ПРОВЕРКУ ---<<<
+                         console.log(`[DEBUG] eventParser callback: Name='${eventLog.name}'`); // <<< ДОБАВЬ ЭТОТ ЛОГ
                         if (eventLog.name === 'BetsPlaced') {
-                            // Сохраняем событие вместе со слотом и сигнатурой
+                             console.log(`[DEBUG] 'BetsPlaced' event MATCHED!`); // <<< ДОБАВЬ ЭТОТ ЛОГ
                             parsedEvents.push({ event: eventLog.data, slot: slot, signature: signature });
                         }
-                         // <<<----------------------------<<<
                     });
+
+                    console.log(`[DEBUG] Parsed events count AFTER loop: ${parsedEvents.length}`); // <<< ДОБАВЬ ЭТОТ ЛОГ
 
                     if (parsedEvents.length === 0) {
                         // В этих логах не было нужного нам события
