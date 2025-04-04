@@ -41,12 +41,9 @@ io.on('connection', (socket) => {
 
 server.listen(PORT, () => {
     console.log(`Server listening on *:${PORT}`);
-    // Добавляем задержку в 1 секунду перед запуском слушателя
-    console.log("Waiting 1 second before attaching event listener...");
-    setTimeout(() => {
-        console.log("Attaching event listener now...");
-        listenToBets();
-    }, 1000); // 1000 миллисекунд = 1 секунда
+    // Задержка убрана, слушатель запускается сразу
+    console.log("Attaching event listener now...");
+    listenToBets(); // Вызываем функцию напрямую
 });
 
 // --- Логика для Solana ---
