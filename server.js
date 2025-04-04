@@ -140,16 +140,16 @@ async function listenToBets() {
                     }
 
                     // Извлекаем данные из декодированного события 'event'
-                    const { player, tokenMint, round, bets, timestamp } = event.data; 
+                    const { player, token_mint, round, bets, timestamp } = event.data; 
 
                     // Готовим промисы для сохранения каждой ставки из события
                     const betPromises = bets.map(betDetail => {
                         const newBet = new BetModel({
                             player: player.toString(),
                             round: round.toNumber(),
-                            tokenMint: tokenMint.toString(),
+                            tokenMint: token_mint.toString(),
                             betAmount: betDetail.amount.toNumber(),
-                            betType: betDetail.betType,
+                            betType: betDetail.bet_type,
                             betNumbers: betDetail.numbers.filter(n => n <= 36),
                             timestamp: new Date(timestamp.toNumber() * 1000),
                             signature: signature // Используем signature из logsResult
