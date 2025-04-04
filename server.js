@@ -140,18 +140,18 @@ async function listenToBets() {
                     }
 
                     // Извлекаем данные из декодированного события 'event'
-                    const { player, token_mint, round, bets, timestamp } = event.data; 
+                    const { player, token_mint, round, bets, timestamp } = event.data;
 
                     // Готовим промисы для сохранения каждой ставки из события
                     const betPromises = bets.map(betDetail => {
                         const newBet = new BetModel({
                             player: player.toString(),
-                            round: round.toNumber(),
+                            round: parseInt(round, 16), // <<< Парсим hex-строку раунда
                             tokenMint: token_mint.toString(),
-                            betAmount: betDetail.amount.toNumber(),
+                            betAmount: parseInt(betDetail.amount, 16), // <<< Парсим hex-строку суммы ставки
                             betType: betDetail.bet_type,
                             betNumbers: betDetail.numbers.filter(n => n <= 36),
-                            timestamp: new Date(timestamp.toNumber() * 1000),
+                            timestamp: new Date(parseInt(timestamp, 16) * 1000), // <<< Парсим hex-строку timestamp
                             signature: signature // Используем signature из logsResult
                         });
                         // Атомарно ищем и вставляем
@@ -167,8 +167,9 @@ async function listenToBets() {
 
                     // Ждем сохранения всех ставок
                     const results = await Promise.all(betPromises);
-                    const savedCount = results.filter(r => r !== null && r === null).length;
-                    const skippedCount = results.filter(r => r !== null && r !== null).length;
+                    // Было: const savedCount = results.filter(r => r !== null && r === null).length;
+                    const savedCount = results.filter(r => r === null).length; // <<< Исправлено: null означает, что запись была вставлена (сохранена)
+                    const skippedCount = results.filter(r => r !== null).length; // <<< Исправлено: не-null означает, что запись уже существовала (пропущена)
 
                     if (savedCount > 0) {
                         console.log(`[ManualDecode] Successfully saved/upserted ${savedCount} bet(s) to DB for signature ${signature}`);
