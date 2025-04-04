@@ -238,9 +238,10 @@ async function listenToBets() {
                 }
 
                 const { signature, logs } = logsResult;
+                console.log('[DEBUG] Raw logs received:', JSON.stringify(logs, null, 2));
+
                 const { slot } = context;
 
-                console.log('[DEBUG] Raw logs received:', JSON.stringify(logs, null, 2));
 
                 // console.log(`Received logs in slot ${slot}, signature: ${signature}`); // Можно раскомментировать для отладки
 
