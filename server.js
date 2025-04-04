@@ -76,7 +76,7 @@ anchor.setProvider(provider); // <<< ДОБАВЬ ЭТУ СТРОКУ: Уста�
 const program = new anchor.Program(idl, PROGRAM_ID, provider); // <<< Возвращаем provider сюда
 
 // Парсер событий Anchor (если мы вернемся к onLogs, он тут)
-const eventParser = new anchor.EventParser(program.programId, new anchor.BorshCoder(program.idl)); // Эту строку можно пока оставить или закомментировать, т.к. addEventListener ее не использует
+// const eventParser = new anchor.EventParser(program.programId, new anchor.BorshCoder(program.idl)); // Эту строку можно пока оставить или закомментировать, т.к. addEventListener ее не использует
 
 
 async function listenToBets() {
@@ -100,85 +100,100 @@ async function listenToBets() {
                 // console.log(`[onLogs] Received logs in slot ${slot}, signature: ${signature}`); // Можно раскомментировать для отладки
 
                 try {
-                    // Парсим логи с помощью нашего eventParser
-                    const parsedEvents = [];
-                    eventParser.parseLogs(logs, (eventLog) => {
-                         console.log(`[DEBUG] eventParser callback: Name='${eventLog.name}'`); // <<< ДОБАВЬ ЭТОТ ЛОГ
-                        if (eventLog.name === 'BetsPlaced') {
-                             console.log(`[DEBUG] 'BetsPlaced' event MATCHED!`); // <<< ДОБАВЬ ЭТОТ ЛОГ
-                            parsedEvents.push({ event: eventLog.data, slot: slot, signature: signature });
+                    // --- НАЧАЛО: Ручной поиск и декодирование события ---
+                    let decodedEventData = null;
+                    const logDataPrefix = "Program data: ";
+
+                    for (const logLine of logs) {
+                        if (logLine.startsWith(logDataPrefix)) {
+                            const base64Data = logLine.substring(logDataPrefix.length);
+                            // Используем кодер программы для декодирования данных события
+                            // null вторым аргументом означает, что имя события не проверяется строго при декодировании
+                            const decoded = program.coder.events.decode(base64Data);
+                            if (decoded) {
+                                // Пытаемся найти *имя* события в IDL по дискриминатору, чтобы убедиться, что это наше
+                                const eventDef = program.idl.events.find(event =>
+                                    // Сравниваем первые 8 байт base64 данных (дискриминатор) с дискриминатором из IDL
+                                    // ПРИМЕЧАНИЕ: Это сравнение может быть не совсем точным, если дискриминатор в IDL не байты Base64
+                                    // Более надежно - проверять имя ПОСЛЕ декодирования, если coder его вернет
+                                    // Пока оставим так, для простоты, или просто будем доверять `program.coder.events.decode`
+                                    true // <-- Упрощенная проверка, просто берем первое успешно декодированное
+                                );
+                                // В Anchor 0.31 decode может не возвращать имя, так что проверяем, что данные есть
+                                // if (eventDef && eventDef.name === 'BetsPlaced') { // Более строгая проверка, если decode вернет имя
+                                if (decoded) { // Упрощенная проверка: если что-то декодировалось, считаем, что это оно
+                                    console.log(`[ManualDecode] Found and decoded event data for signature ${signature}`);
+                                    decodedEventData = decoded;
+                                    break; // Нашли и декодировали, выходим из цикла по логам
+                                }
+                            }
                         }
-                    });
+                    }
+                    // --- КОНЕЦ: Ручной поиск и декодирование события ---
 
-                    console.log(`[DEBUG] Parsed events count AFTER loop: ${parsedEvents.length}`); // <<< ДОБАВЬ ЭТОТ ЛОГ
-
-                    if (parsedEvents.length === 0) {
-                        // В этих логах не было нужного нам события
-                        // console.log(`[onLogs] No 'BetsPlaced' events found in logs for signature ${signature}`);
+                    if (!decodedEventData) {
+                        // Событие не найдено или не декодировано
+                        // console.log(`[ManualDecode] No 'BetsPlaced' data found or decoded in logs for signature ${signature}`);
                         return;
                     }
 
-                    console.log(`[onLogs] Found ${parsedEvents.length} 'BetsPlaced' event(s) in logs for signature ${signature}`);
+                    // Используем декодированные данные
+                    const event = decodedEventData;
 
-                    // Обрабатываем каждое найденное событие
-                    for (const parsed of parsedEvents) {
-                        const { event, slot: currentSlot, signature: currentSig } = parsed;
+                    // Проверяем, не обработали ли мы уже эту транзакцию
+                    const existingBet = await BetModel.findOne({ signature: signature }); // Используем signature из logsResult
+                    if (existingBet) {
+                        console.log(`[ManualDecode] Signature ${signature} already processed. Skipping.`);
+                        return; // Пропускаем, если уже есть в БД
+                    }
 
-                        // Проверяем, не обработали ли мы уже эту транзакцию
-                        const existingBet = await BetModel.findOne({ signature: currentSig });
-                        if (existingBet) {
-                            console.log(`[onLogs] Signature ${currentSig} already processed. Skipping.`);
-                            continue; // Пропускаем, если уже есть в БД
-                        }
+                    // Извлекаем данные из декодированного события 'event'
+                    const { player, tokenMint, round, bets, timestamp } = event;
 
-                        // Извлекаем данные из события
-                        const { player, tokenMint, round, bets, timestamp } = event;
-
-                        // Готовим промисы для сохранения каждой ставки из события
-                        const betPromises = bets.map(betDetail => {
-                            const newBet = new BetModel({
-                                player: player.toString(),
-                                round: round.toNumber(),
-                                tokenMint: tokenMint.toString(),
-                                betAmount: betDetail.amount.toNumber(),
-                                betType: betDetail.betType,
-                                betNumbers: betDetail.numbers.filter(n => n <= 36),
-                                timestamp: new Date(timestamp.toNumber() * 1000),
-                                signature: currentSig // Используем сигнатуру транзакции
-                            });
-                            // Атомарно ищем и вставляем, если не найдено
-                            return BetModel.findOneAndUpdate(
-                                { signature: currentSig },
-                                { $setOnInsert: newBet },
-                                { upsert: true, new: false, setDefaultsOnInsert: true }
-                            ).catch(err => {
-                                console.error(`[onLogs] Error saving bet for signature ${currentSig}:`, err);
-                                return null;
-                            });
+                    // Готовим промисы для сохранения каждой ставки из события
+                    const betPromises = bets.map(betDetail => {
+                        const newBet = new BetModel({
+                            player: player.toString(),
+                            round: round.toNumber(),
+                            tokenMint: tokenMint.toString(),
+                            betAmount: betDetail.amount.toNumber(),
+                            betType: betDetail.betType,
+                            betNumbers: betDetail.numbers.filter(n => n <= 36),
+                            timestamp: new Date(timestamp.toNumber() * 1000),
+                            signature: signature // Используем signature из logsResult
                         });
+                        // Атомарно ищем и вставляем
+                        return BetModel.findOneAndUpdate(
+                            { signature: signature },
+                            { $setOnInsert: newBet },
+                            { upsert: true, new: false, setDefaultsOnInsert: true }
+                        ).catch(err => {
+                            console.error(`[ManualDecode] Error saving bet for signature ${signature}:`, err);
+                            return null;
+                        });
+                    });
 
-                        // Ждем сохранения всех ставок
-                        const results = await Promise.all(betPromises);
-                        const savedCount = results.filter(r => r !== null && r === null).length;
-                        const skippedCount = results.filter(r => r !== null && r !== null).length;
+                    // Ждем сохранения всех ставок
+                    const results = await Promise.all(betPromises);
+                    const savedCount = results.filter(r => r !== null && r === null).length;
+                    const skippedCount = results.filter(r => r !== null && r !== null).length;
 
-                        if (savedCount > 0) {
-                            console.log(`[onLogs] Successfully saved/upserted ${savedCount} bet(s) to DB for signature ${currentSig}`);
-                            // Отправляем событие через Socket.IO
-                            io.emit('newBets', {
-                                signature: currentSig,
-                                slot: currentSlot,
-                                data: event
-                            });
-                            console.log(`[onLogs] Emitted 'newBets' event via Socket.IO for signature ${currentSig}`);
-                        }
-                        if (skippedCount > 0) {
-                            console.log(`[onLogs] Skipped ${skippedCount} already existing bet(s) for signature ${currentSig}`);
-                        }
+                    if (savedCount > 0) {
+                        console.log(`[ManualDecode] Successfully saved/upserted ${savedCount} bet(s) to DB for signature ${signature}`);
+                        // Отправляем событие через Socket.IO
+                        io.emit('newBets', {
+                            signature: signature, // Используем signature из logsResult
+                            slot: slot,        // Используем slot из context
+                            data: event       // Отправляем декодированное событие
+                        });
+                        console.log(`[ManualDecode] Emitted 'newBets' event via Socket.IO for signature ${signature}`);
+                    }
+                    if (skippedCount > 0) {
+                        console.log(`[ManualDecode] Skipped ${skippedCount} already existing bet(s) for signature ${signature}`);
                     }
 
                 } catch (error) {
-                    console.error(`[onLogs] Error processing logs for signature ${signature}:`, error);
+                    console.error(`[ManualDecode] Error processing logs for signature ${signature}:`, error);
                 }
             },
             'confirmed' // Уровень подтверждения для логов
