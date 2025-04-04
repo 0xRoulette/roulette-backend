@@ -65,8 +65,14 @@ const ownerKeypair = anchor.web3.Keypair.fromSecretKey(Uint8Array.from(secretKey
 const ownerWallet = new anchor.Wallet(ownerKeypair); // <<< Создаем объект Wallet
 
 // Используем загруженный кошелек в провайдере
-const provider = new anchor.AnchorProvider(connection, ownerWallet, { commitment: 'confirmed' }); // <<< Заменяем {} или dummyWallet на ownerWallet
-const program = new anchor.Program(idl, PROGRAM_ID, provider);
+const provider = new anchor.AnchorProvider(connection, ownerWallet, { commitment: 'confirmed' });
+anchor.setProvider(provider); // <<< ДОБАВЬ ЭТУ СТРОКУ: Устанавливаем провайдер глобально
+
+// Инициализируем программу БЕЗ provider в конструкторе
+const program = new anchor.Program(idl, PROGRAM_ID); // <<< УБЕРИ provider отсюда
+
+// Парсер событий Anchor (если мы вернемся к onLogs, он тут)
+// const eventParser = new anchor.EventParser(program.programId, new anchor.BorshCoder(program.idl)); // Эту строку можно пока оставить или закомментировать, т.к. addEventListener ее не использует
 
 // Парсер событий Anchor
 const eventParser = new anchor.EventParser(program.programId, new anchor.BorshCoder(program.idl));
