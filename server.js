@@ -72,7 +72,7 @@ const ownerWallet = new anchor.Wallet(ownerKeypair); // <<< Создаем об�
 const provider = new anchor.AnchorProvider(connection, ownerWallet, { commitment: 'confirmed' });
 
 // Инициализируем программу БЕЗ provider в конструкторе
-const program = new anchor.Program(idl, PROGRAM_ID, provider); // <<< Возвращаем provider сюда
+// const program = new anchor.Program(idl, PROGRAM_ID, provider); // <<< Возвращаем provider сюда
 
 // Парсер событий Anchor (если мы вернемся к onLogs, он тут)
 // const eventParser = new anchor.EventParser(program.programId, new anchor.BorshCoder(program.idl)); // Эту строку можно пока оставить или закомментировать, т.к. addEventListener ее не использует
@@ -80,6 +80,7 @@ const program = new anchor.Program(idl, PROGRAM_ID, provider); // <<< Возвр
 
 async function listenToBets() {
     console.log(`Listening for Logs from program ${PROGRAM_ID.toString()} using connection.onLogs...`);
+    const borshCoder = new anchor.BorshCoder(idl); // <<< СОЗДАЕМ КОДЕР ЗДЕСЬ
 
     try {
         // Используем connection.onLogs напрямую
@@ -108,16 +109,8 @@ async function listenToBets() {
                             const base64Data = logLine.substring(logDataPrefix.length);
                             // Используем кодер программы для декодирования данных события
                             // null вторым аргументом означает, что имя события не проверяется строго при декодировании
-                            const decoded = program.coder.events.decode(base64Data);
+                            const decoded = borshCoder.events.decode(base64Data); // <<< ИСПОЛЬЗУЕМ borshCoder
                             if (decoded) {
-                                // Пытаемся найти *имя* события в IDL по дискриминатору, чтобы убедиться, что это наше
-                                const eventDef = program.idl.events.find(event =>
-                                    // Сравниваем первые 8 байт base64 данных (дискриминатор) с дискриминатором из IDL
-                                    // ПРИМЕЧАНИЕ: Это сравнение может быть не совсем точным, если дискриминатор в IDL не байты Base64
-                                    // Более надежно - проверять имя ПОСЛЕ декодирования, если coder его вернет
-                                    // Пока оставим так, для простоты, или просто будем доверять `program.coder.events.decode`
-                                    true // <-- Упрощенная проверка, просто берем первое успешно декодированное
-                                );
                                 // В Anchor 0.31 decode может не возвращать имя, так что проверяем, что данные есть
                                 // if (eventDef && eventDef.name === 'BetsPlaced') { // Более строгая проверка, если decode вернет имя
                                 if (decoded) { // Упрощенная проверка: если что-то декодировалось, считаем, что это оно
