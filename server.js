@@ -249,10 +249,9 @@ async function listenToBets() {
                     // Парсим логи с помощью нашего eventParser
                     const parsedEvents = [];
                     eventParser.parseLogs(logs, (eventLog) => {
-                        if (eventLog.name === 'BetsPlaced') {
-                            // Сохраняем событие вместе со слотом и сигнатурой
-                            parsedEvents.push({ event: eventLog.data, slot: slot, signature: signature });
-                        }
+                        console.log(`[DEBUG] Parser found event: Name='${eventLog.name}', Data=`, eventLog.data); // Просто логируем все, что найдено
+                        parsedEvents.push({ event: eventLog.data, slot: slot, signature: signature }); // Добавляем любое найденное событие
+                        // <<<------------------<<<
                     });
 
                     console.log(`[DEBUG] Parsed events count: ${parsedEvents.length}`); // <<< ДОБАВЬ ЭТУ СТРОКУ
