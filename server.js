@@ -39,17 +39,10 @@ io.on('connection', (socket) => {
     // Здесь можно будет добавить обработчики событий от клиента, если нужно
 });
 
-server.listen(PORT, async () => { // <<< БЫЛО async
+server.listen(PORT, () => { // <<< Убираем async
     console.log(`Server listening on *:${PORT}`);
-    try {
-        console.log("Attempting to fetch historical bets...");
-        await fetchHistoricalBets(); // <<< УДАЛЯЕМ ЭТОТ БЛОК try/catch
-        console.log("Historical bets fetch completed (or skipped).");
-        listenToBets();
-    } catch (error) {
-        console.error("Error during historical bets fetch:", error);
-        // listenToBets(); // И логику обработки ошибок истории
-    }
+    // <<<--- Удаляем весь блок try/catch с fetchHistoricalBets ---<<<
+    listenToBets(); // <<< Просто вызываем слушатель событий напрямую
 });
 
 // --- Логика для Solana ---
@@ -77,149 +70,6 @@ const program = new anchor.Program(idl, PROGRAM_ID, provider);
 
 // Парсер событий Anchor
 const eventParser = new anchor.EventParser(program.programId, new anchor.BorshCoder(program.idl));
-
-async function fetchHistoricalBets() {
-    console.log(`Fetching historical signatures for program ${PROGRAM_ID.toString()}...`);
-    let signatures = [];
-    let lastSignature = undefined;
-    const batchSize = 1000; // Получаем по 1000 сигнатур за раз
-
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-        try {
-            const fetchedSignatures = await connection.getSignaturesForAddress(PROGRAM_ID, {
-                limit: batchSize,
-                before: lastSignature, // Пагинация: получаем сигнатуры ДО последней из предыдущего батча
-            });
-
-            if (fetchedSignatures.length === 0) {
-                break; // Больше нет сигнатур
-            }
-
-            signatures = signatures.concat(fetchedSignatures);
-            lastSignature = fetchedSignatures[fetchedSignatures.length - 1].signature;
-            console.log(`Fetched ${fetchedSignatures.length} signatures, total: ${signatures.length}, oldest: ${lastSignature}`);
-
-            // Опционально: можно добавить условие выхода, если сигнатуры стали слишком старыми
-            // if (fetchedSignatures[fetchedSignatures.length - 1].blockTime < SOME_TIMESTAMP) break;
-
-        } catch (error) {
-            console.error("Error fetching signatures:", error);
-            // Решаем, прервать или повторить попытку
-            break;
-        }
-    }
-
-    console.log(`Found ${signatures.length} total historical signatures. Processing transactions...`);
-
-    // Обрабатываем транзакции в обратном порядке (от старых к новым)
-    // Чтобы если процесс прервется, при следующем запуске он продолжил с более новых
-    for (let i = signatures.length - 1; i >= 0; i--) {
-        const sigInfo = signatures[i];
-        const signature = sigInfo.signature;
-
-        // 1. Проверяем, есть ли уже в БД
-        try {
-            const existingBet = await BetModel.findOne({ signature: signature });
-            if (existingBet) {
-                // console.log(`Signature ${signature} already in DB. Skipping.`); // Можно раскомментировать для детального лога
-                continue; // Пропускаем, если уже обработано
-            }
-        } catch (dbError) {
-            console.error(`DB check error for signature ${signature}:`, dbError);
-            continue; // Пропускаем в случае ошибки БД
-        }
-
-        // 2. Получаем транзакцию
-        try {
-            // Используем getTransaction, так как getParsedTransaction может не парсить логи Anchor событий
-            const tx = await connection.getTransaction(signature, {
-                commitment: 'confirmed',
-                maxSupportedTransactionVersion: 0 // Важно для получения логов
-            });
-
-            if (!tx || !tx.meta || !tx.meta.logMessages) {
-                console.warn(`Could not retrieve transaction details or logs for signature: ${signature}`);
-                continue;
-            }
-
-            // 3. Ищем и парсим события в логах
-            const logs = tx.meta.logMessages;
-            const parsedEvents = [];
-            eventParser.parseLogs(logs, (eventLog) => {
-                // eventLog содержит { name: 'EventName', data: {...} }
-                if (eventLog.name === 'BetsPlaced') {
-                    parsedEvents.push({ event: eventLog.data, slot: tx.slot, signature: signature });
-                }
-            });
-
-
-            if (parsedEvents.length === 0) {
-                // Транзакция не содержала события BetsPlaced
-                continue;
-            }
-
-            console.log(`Found ${parsedEvents.length} BetsPlaced event(s) in signature ${signature}`);
-
-            // 4. Сохраняем найденные события в БД (логика почти идентична listenToBets)
-            for (const parsed of parsedEvents) {
-                const { event, slot, signature: currentSig } = parsed; // Используем данные из parsed
-                const { player, tokenMint, round, bets, timestamp } = event;
-
-                const betPromises = bets.map(betDetail => {
-                    const newBet = new BetModel({
-                        player: player.toString(),
-                        round: round.toNumber(),
-                        tokenMint: tokenMint.toString(),
-                        betAmount: betDetail.amount.toNumber(),
-                        betType: betDetail.betType,
-                        betNumbers: betDetail.numbers.filter(n => n <= 36),
-                        timestamp: new Date(timestamp.toNumber() * 1000),
-                        signature: currentSig // Используем сигнатуру транзакции
-                    });
-                    // Важно: Перед сохранением еще раз проверим (на всякий случай, если несколько событий в одной tx)
-                    // Хотя проверка в начале цикла по сигнатуре должна быть достаточной
-                    return BetModel.findOneAndUpdate(
-                        { signature: currentSig, player: player.toString(), round: round.toNumber(), /* можно добавить еще поля для точности, если нужно */ }, // Условие поиска (сигнатура должна быть уникальной)
-                        { $setOnInsert: newBet }, // Данные для вставки, если документ не найден
-                        { upsert: true, new: false, setDefaultsOnInsert: true } // upsert: true - вставить, если нет
-                    ).catch(err => {
-                        console.error(`Error saving historical bet for signature ${currentSig}:`, err);
-                        // Помечаем ошибку или пропускаем, чтобы не блокировать весь процесс
-                        return null;
-                    });
-                });
-
-                const results = await Promise.all(betPromises);
-                const savedCount = results.filter(r => r !== null && r === null).length; // Проверяем, сколько было вставлено (upsert вернет null, если вставил)
-                const skippedCount = results.filter(r => r !== null && r !== null).length; // // Проверяем, сколько было найдено (upsert вернет документ, если нашел)
-                if (savedCount > 0) {
-                    console.log(`Saved ${savedCount} historical bet(s) to DB for signature ${signature}`);
-                }
-                if (skippedCount > 0) {
-                    // console.log(`Skipped ${skippedCount} already existing bet(s) for signature ${signature}`);
-                }
-
-                // Отправлять ли исторические ставки через Socket.IO? Обычно нет,
-                // так как фронтенд сам запросит историю, когда загрузится.
-                // io.emit('newBets', { signature: currentSig, slot: slot, data: event });
-            }
-
-        } catch (error) {
-            // Игнорируем ошибки отдельных транзакций, чтобы продолжить обработку остальных
-            if (error.message.includes("failed to get transaction") || error.message.includes("Node is behind")) {
-                console.warn(`Failed to fetch transaction ${signature}, likely due to node issues or it being too old. Skipping.`);
-            } else if (error instanceof Error) { // Проверяем, что error это объект Error
-                console.error(`Error processing transaction ${signature}:`, error.message); // Логируем только сообщение
-            } else {
-                console.error(`Unknown error processing transaction ${signature}:`, error);
-            }
-        }
-        // Небольшая пауза, чтобы не перегружать RPC узел
-        await new Promise(resolve => setTimeout(resolve, 50)); // 50ms пауза
-    }
-    console.log("Finished processing historical transactions.");
-}
 
 async function listenToBets() {
     console.log(`Listening for Logs from program ${PROGRAM_ID.toString()} using connection.onLogs...`);
@@ -249,6 +99,9 @@ async function listenToBets() {
                     // Парсим логи с помощью нашего eventParser
                     const parsedEvents = [];
                     eventParser.parseLogs(logs, (eventLog) => {
+                        if (eventLog.name === 'BetsPlaced') {
+                            parsedEvents.push({ event: eventLog.data, slot: slot, signature: signature });
+                        }
                         console.log(`[DEBUG] Parser found event: Name='${eventLog.name}', Data=`, eventLog.data); // Просто логируем все, что найдено
                         parsedEvents.push({ event: eventLog.data, slot: slot, signature: signature }); // Добавляем любое найденное событие
                         // <<<------------------<<<
