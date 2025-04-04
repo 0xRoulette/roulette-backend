@@ -70,7 +70,6 @@ const ownerWallet = new anchor.Wallet(ownerKeypair); // <<< Создаем об�
 
 // Используем загруженный кошелек в провайдере
 const provider = new anchor.AnchorProvider(connection, ownerWallet, { commitment: 'confirmed' });
-anchor.setProvider(provider); // <<< ДОБАВЬ ЭТУ СТРОКУ: Устанавливаем провайдер глобально
 
 // Инициализируем программу БЕЗ provider в конструкторе
 const program = new anchor.Program(idl, PROGRAM_ID, provider); // <<< Возвращаем provider сюда
