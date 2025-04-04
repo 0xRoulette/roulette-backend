@@ -205,3 +205,80 @@ async function listenToBets() {
         console.error("[onLogs] Failed to subscribe to logs:", error);
     }
 }
+app.get('/api/bets', async (req, res) => {
+    const roundQuery = req.query.round; // Получаем номер раунда из запроса (?round=...)
+    console.log(`[API] Запрос ставок для раунда: ${roundQuery}`);
+
+    if (!roundQuery || isNaN(parseInt(roundQuery))) {
+        return res.status(400).json({ error: 'Не указан корректный номер раунда' });
+    }
+
+    const roundNumber = parseInt(roundQuery);
+
+    try {
+        // Ищем все записи ставок для указанного раунда в MongoDB
+        // Используем .lean() для производительности, т.к. нам нужны только данные
+        const betsFromDb = await BetModel.find({ round: roundNumber }).lean();
+
+        if (!betsFromDb || betsFromDb.length === 0) {
+            console.log(`[API] Ставки для раунда ${roundNumber} не найдены.`);
+            return res.json([]); // Возвращаем пустой массив, если ставок нет
+        }
+
+        console.log(`[API] Найдено ${betsFromDb.length} записей ставок для раунда ${roundNumber}.`);
+
+        // Группируем ставки по игроку
+        const betsGroupedByPlayer = {};
+        betsFromDb.forEach(bet => {
+            const playerKey = bet.player.toString(); // Убедимся, что ключ - строка
+            if (!betsGroupedByPlayer[playerKey]) {
+                betsGroupedByPlayer[playerKey] = {
+                    player: playerKey,
+                    round: bet.round,
+                    symbol: 'SOL', // TODO: Определить символ токена (пока хардкод)
+                    timestamp: 0, // Будет обновлен на максимальный timestamp ставок игрока
+                    bets: []
+                };
+            }
+            // Добавляем детали ставки
+            betsGroupedByPlayer[playerKey].bets.push({
+                amount: bet.betAmount,
+                // Маппим тип ставки из числа в строку ПРЯМО ЗДЕСЬ
+                betType: mapBetTypeEnumToString(bet.betType),
+                numbers: bet.betNumbers || []
+            });
+            // Обновляем timestamp группы на самый последний timestamp ставки
+            betsGroupedByPlayer[playerKey].timestamp = Math.max(
+                betsGroupedByPlayer[playerKey].timestamp,
+                new Date(bet.timestamp).getTime() // Используем время из БД
+            );
+        });
+
+        // Преобразуем объект с группами в массив
+        const responseData = Object.values(betsGroupedByPlayer);
+
+        // Сортируем группы по времени (самые новые вверху)
+        responseData.sort((a, b) => b.timestamp - a.timestamp);
+
+        console.log(`[API] Отправка сгруппированных ставок для раунда ${roundNumber}.`);
+        res.json(responseData);
+
+    } catch (error) {
+        console.error(`[API] Ошибка при получении ставок для раунда ${roundNumber}:`, error);
+        res.status(500).json({ error: 'Внутренняя ошибка сервера при получении ставок' });
+    }
+});
+
+// --- Вспомогательная функция маппинга (нужна здесь тоже!) ---
+function mapBetTypeEnumToString(enumValue) {
+    const betTypeMapping = [
+        'Straight', 'Split', 'Street', 'Corner', 'SixLine',
+        'P12', 'M12', 'D12', 'Column',
+        'Red', 'Black', 'Even', 'Odd', 'Manque', 'Passe'
+    ];
+     if (enumValue >= 0 && enumValue < betTypeMapping.length) {
+        return betTypeMapping[enumValue];
+    }
+    console.warn(`[API mapBetType] Неизвестный bet_type enum: ${enumValue}`);
+    return `Unknown (${enumValue})`; // Возвращаем как есть, чтобы не ломать фронт
+}
