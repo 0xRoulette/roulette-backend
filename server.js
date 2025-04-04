@@ -246,12 +246,17 @@ async function listenToBets() {
                     // Парсим логи с помощью нашего eventParser
                     const parsedEvents = [];
                     eventParser.parseLogs(logs, (eventLog) => {
-                        // eventLog = { name: 'EventName', data: {...} }
                         if (eventLog.name === 'BetsPlaced') {
                             // Сохраняем событие вместе со слотом и сигнатурой
                             parsedEvents.push({ event: eventLog.data, slot: slot, signature: signature });
                         }
                     });
+
+                    console.log(`[DEBUG] Parsed events count: ${parsedEvents.length}`); // <<< ДОБАВЬ ЭТУ СТРОКУ
+                    if (parsedEvents.length > 0) {
+                        console.log('[DEBUG] First parsed event:', JSON.stringify(parsedEvents[0])); // <<< И ЭТУ СТРОКУ
+                    }
+
 
                     if (parsedEvents.length === 0) {
                         // В этих логах не было нужного нам события
