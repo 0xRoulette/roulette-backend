@@ -229,6 +229,7 @@ async function listenToBets() {
         const subscriptionId = connection.onLogs(
             PROGRAM_ID, // Слушаем логи только для нашей программы
             async (logsResult, context) => {
+                console.log('[DEBUG] Raw logs received:', JSON.stringify(logs, null, 2)); // <<< ДОБАВЬ ЭТУ СТРОКУ
                 console.log(`[DEBUG] onLogs callback triggered. Signature: ${logsResult.signature}, Error: ${logsResult.err}`); // <<< ДОБАВЬ ЭТУ СТРОКУ
                 // logsResult содержит { signature, err, logs }
                 // context содержит { slot }
