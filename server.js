@@ -17,7 +17,7 @@ const PORT = process.env.PORT || 3001; // Порт для бэкенда
 
 // Подключение к MongoDB (замени 'your_mongodb_connection_string' на твою строку подключения)
 // Пример: 'mongodb://localhost:27017/roulette'
-const { QUICKNODE_RPC, MONGO_URI, QUICKNODE_WSS} = require('./config'); // <<< Добавлено
+const { QUICKNODE_RPC, MONGO_URI, QUICKNODE_WSS } = require('./config'); // <<< Добавлено
 
 mongoose.connect(MONGO_URI)
     .then(() => console.log('MongoDB Connected'))
@@ -229,6 +229,7 @@ async function listenToBets() {
         const subscriptionId = connection.onLogs(
             PROGRAM_ID, // Слушаем логи только для нашей программы
             async (logsResult, context) => {
+                console.log(`[DEBUG] onLogs callback triggered. Signature: ${logsResult.signature}, Error: ${logsResult.err}`); // <<< ДОБАВЬ ЭТУ СТРОКУ
                 // logsResult содержит { signature, err, logs }
                 // context содержит { slot }
                 if (logsResult.err) {
@@ -315,7 +316,7 @@ async function listenToBets() {
                         }
                         // Если ставки были пропущены (уже существовали)
                         if (skippedCount > 0) {
-                             console.log(`Real-time (onLogs): Skipped ${skippedCount} already existing bet(s) for signature ${currentSig}`);
+                            console.log(`Real-time (onLogs): Skipped ${skippedCount} already existing bet(s) for signature ${currentSig}`);
                         }
                     }
 
@@ -336,7 +337,7 @@ async function listenToBets() {
                 // Здесь можно добавить логику переподключения, если нужно
             });
             ws.on('error', (error) => {
-                 console.error(`WebSocket error for subscription ${subscriptionId}:`, error);
+                console.error(`WebSocket error for subscription ${subscriptionId}:`, error);
             });
         }
 
