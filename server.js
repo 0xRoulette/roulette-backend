@@ -131,6 +131,8 @@ async function listenToBets() {
 
                     // Используем декодированные данные
                     const event = decodedEventData;
+                    console.log('[ManualDecode] Decoded event object:', JSON.stringify(event, null, 2)); // <<< ДОБАВЬ ЭТУ СТРОКУ
+
 
                     // Проверяем, не обработали ли мы уже эту транзакцию
                     const existingBet = await BetModel.findOne({ signature: signature }); // Используем signature из logsResult
