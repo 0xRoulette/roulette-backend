@@ -7,7 +7,7 @@ const cors = require('cors'); // <<< Добавляем эту строку
 
 const app = express();
 app.use(cors({
-    origin: 'http://localhost:8080',
+    origin: '*',
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], // Разрешенные методы
     allowedHeaders: ['Content-Type', 'Authorization'] // Разрешенные заголовки
   }));
