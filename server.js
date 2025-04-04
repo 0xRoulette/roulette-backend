@@ -3,8 +3,14 @@ const http = require('http');
 const { Server } = require("socket.io");
 const mongoose = require('mongoose');
 const fs = require('fs')
+const cors = require('cors'); // <<< Добавляем эту строку
 
 const app = express();
+app.use(cors({
+    origin: 'http://localhost:8080',
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], // Разрешенные методы
+    allowedHeaders: ['Content-Type', 'Authorization'] // Разрешенные заголовки
+  }));
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: {
