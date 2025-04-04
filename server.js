@@ -235,7 +235,7 @@ app.get('/api/bets', async (req, res) => {
                 betsGroupedByPlayer[playerKey] = {
                     player: playerKey,
                     round: bet.round,
-                    symbol: 'SOL', // TODO: Определить символ токена (пока хардкод)
+                    tokenMint: bet.tokenMint.toString(), // <<< ДОБАВЛЯЕМ tokenMint от первой ставки
                     timestamp: 0, // Будет обновлен на максимальный timestamp ставок игрока
                     bets: []
                 };
@@ -276,7 +276,7 @@ function mapBetTypeEnumToString(enumValue) {
         'P12', 'M12', 'D12', 'Column',
         'Red', 'Black', 'Even', 'Odd', 'Manque', 'Passe'
     ];
-     if (enumValue >= 0 && enumValue < betTypeMapping.length) {
+    if (enumValue >= 0 && enumValue < betTypeMapping.length) {
         return betTypeMapping[enumValue];
     }
     console.warn(`[API mapBetType] Неизвестный bet_type enum: ${enumValue}`);
