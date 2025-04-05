@@ -10,7 +10,7 @@ app.use(cors({
     origin: '*',
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], // Разрешенные методы
     allowedHeaders: ['Content-Type', 'Authorization'] // Разрешенные заголовки
-  }));
+}));
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: {
@@ -145,54 +145,95 @@ async function listenToBets() {
                     // Извлекаем данные из декодированного события 'event'
                     const { player, token_mint, round, bets, timestamp } = event.data;
 
-                    // Готовим промисы для сохранения каждой ставки из события
-                    const betPromises = bets.map(betDetail => {
+                    const uniqueBetsForDbMap = new Map();
+                    bets.forEach(betDetail => {
+                        // Ключ может включать тип, числа и сумму для уникальности
+                        const betKey = `${betDetail.bet_type}-${betDetail.numbers.sort().join(',')}-${betDetail.amount}`;
+                        if (!uniqueBetsForDbMap.has(betKey)) {
+                            uniqueBetsForDbMap.set(betKey, betDetail);
+                        }
+                    });
+                    const uniqueBetsForDb = Array.from(uniqueBetsForDbMap.values());
+
+
+                    // Готовим промисы для сохранения КАЖДОЙ УНИКАЛЬНОЙ ставки из события
+                    const betPromises = uniqueBetsForDb.map(betDetail => { // <<< Используем uniqueBetsForDb
                         const newBet = new BetModel({
                             player: player.toString(),
-                            round: parseInt(round, 16), // <<< Парсим hex-строку раунда
+                            round: parseInt(round, 16),
                             tokenMint: token_mint.toString(),
-                            betAmount: parseInt(betDetail.amount, 16), // <<< Парсим hex-строку суммы ставки
-                            betType: betDetail.bet_type,
+                            betAmount: parseInt(betDetail.amount, 16),
+                            betType: betDetail.bet_type, // Сохраняем числовое значение enum
                             betNumbers: betDetail.numbers.filter(n => n <= 36),
-                            timestamp: new Date(parseInt(timestamp, 16) * 1000), // <<< Парсим hex-строку timestamp
-                            signature: signature // Используем signature из logsResult
+                            timestamp: new Date(parseInt(timestamp, 16) * 1000),
+                            signature: signature // Связываем каждую запись с транзакцией
                         });
-                        // Атомарно ищем и вставляем
+                        // Атомарно ищем ПО СИГНАТУРЕ И УНИКАЛЬНОМУ КЛЮЧУ СТАВКИ (для большей надежности)
+                        // Или проще оставить поиск только по сигнатуре, как было, т.к. мы уже отфильтровали дубликаты *до* сохранения
                         return BetModel.findOneAndUpdate(
-                            { signature: signature },
+                            // Можно усложнить ключ, чтобы гарантировать уникальность самой ставки,
+                            // но проверка existingBet по сигнатуре выше должна быть достаточной.
+                            {
+                                signature: signature,
+                                // Дополнительные поля для уникальности, если нужно:
+                                // betType: betDetail.bet_type,
+                                // betAmount: parseInt(betDetail.amount, 16)
+                                // 'betNumbers': betDetail.numbers.filter(n => n <= 36) // Сортировка важна для сравнения массивов
+                            },
                             { $setOnInsert: newBet },
                             { upsert: true, new: false, setDefaultsOnInsert: true }
                         ).catch(err => {
                             console.error(`[ManualDecode] Error saving bet for signature ${signature}:`, err);
-                            return null;
+                            return null; // Возвращаем null при ошибке сохранения конкретной ставки
                         });
                     });
 
-                    // Ждем сохранения всех ставок
+
                     const results = await Promise.all(betPromises);
-                    // Было: const savedCount = results.filter(r => r !== null && r === null).length;
-                    const savedCount = results.filter(r => r === null).length; // <<< Исправлено: null означает, что запись была вставлена (сохранена)
-                    const skippedCount = results.filter(r => r !== null).length; // <<< Исправлено: не-null означает, что запись уже существовала (пропущена)
+                    const savedCount = results.filter(r => r === null).length; // null означает, что upsert вставил новый документ
+                    const skippedCount = results.length - savedCount; // Остальные были пропущены (уже существовали)
 
                     if (savedCount > 0) {
-                        console.log(`[ManualDecode] Successfully saved/upserted ${savedCount} bet(s) to DB for signature ${signature}`);
-                        // Отправляем событие через Socket.IO
+                        console.log(`[ManualDecode] Successfully saved/upserted ${savedCount} unique bet(s) to DB for signature ${signature}`);
+
+                        // --- НАЧАЛО: Формирование события для WebSocket с уникальными ставками ---
+                        const eventForSocket = {
+                            name: event.name, // Сохраняем имя события ('BetsPlaced')
+                            data: {
+                                player: player, // Адрес игрока (PublicKey)
+                                token_mint: token_mint, // Адрес минта (PublicKey)
+                                round: round, // Номер раунда (BN)
+                                timestamp: timestamp, // Временная метка (BN)
+                                // ВАЖНО: Используем массив уникальных ставок, который сохраняли в БД
+                                bets: uniqueBetsForDb.map(betDetail => ({
+                                    amount: betDetail.amount, // Сумма ставки (BN)
+                                    bet_type: betDetail.bet_type, // Тип ставки (enum число)
+                                    numbers: betDetail.numbers // Массив чисел
+                                }))
+                            }
+                        };
+                        // --- КОНЕЦ: Формирование события для WebSocket ---
+
+
+                        // Отправляем событие с УНИКАЛЬНЫМИ ставками через Socket.IO
                         io.emit('newBets', {
-                            signature: signature, // Используем signature из logsResult
-                            slot: slot,        // Используем slot из context
-                            data: event       // Отправляем декодированное событие
+                            signature: signature,
+                            slot: slot,
+                            data: eventForSocket // <<< Отправляем модифицированное событие
                         });
-                        console.log(`[ManualDecode] Emitted 'newBets' event via Socket.IO for signature ${signature}`);
-                    }
-                    if (skippedCount > 0) {
-                        console.log(`[ManualDecode] Skipped ${skippedCount} already existing bet(s) for signature ${signature}`);
+                        console.log(`[ManualDecode] Emitted 'newBets' event via Socket.IO for signature ${signature} with ${uniqueBetsForDb.length} unique bet(s).`);
+
+                    } else if (skippedCount > 0) {
+                        // Если все ставки были пропущены (т.е. вся транзакция - дубликат), мы сюда не дойдем из-за проверки existingBet выше.
+                        // Этот лог может сработать, если были ошибки сохранения части ставок.
+                        console.log(`[ManualDecode] Skipped ${skippedCount} already existing/error bet(s) for signature ${signature}. No new bets saved.`);
                     }
 
                 } catch (error) {
                     console.error(`[ManualDecode] Error processing logs for signature ${signature}:`, error);
                 }
             },
-            'confirmed' // Уровень подтверждения для логов
+            'confirmed'
         );
 
         console.log(`[onLogs] Subscribed to logs with subscription ID: ${subscriptionId}. Waiting for events...`);
@@ -261,12 +302,24 @@ app.get('/api/bets', async (req, res) => {
         });
 
         // Преобразуем объект с группами в массив
-        const responseData = Object.values(betsGroupedByPlayer);
+        const responseData = betsFromDb.map(bet => ({
+            player: bet.player.toString(),
+            round: bet.round,
+            tokenMint: bet.tokenMint.toString(),
+            timestamp: new Date(bet.timestamp).getTime(), // Отправляем timestamp как число
+            amount: bet.betAmount, // Отправляем сырую сумму (lamports)
+            betType: mapBetTypeEnumToString(bet.betType), // Маппим тип
+            numbers: bet.betNumbers || [],
+            signature: bet.signature // Добавляем сигнатуру, если нужна на фронте
+            // Добавь isMyBet здесь, если это удобнее делать на бэкенде
+            // isMyBet: bet.player.toString() === 'АДРЕС_ИГРОКА_ИЗ_ЗАПРОСА?' // Потребует передачи адреса
+        }));
 
-        // Сортируем группы по времени (самые новые вверху)
+        // Сортируем плоский список по времени (самые новые вверху)
+        // Можно добавить вторичную сортировку, например, по игроку
         responseData.sort((a, b) => b.timestamp - a.timestamp);
 
-        console.log(`[API] Отправка сгруппированных ставок для раунда ${roundNumber}.`);
+        console.log(`[API] Отправка плоского списка ставок для раунда ${roundNumber}.`);
         res.json(responseData);
 
     } catch (error) {
@@ -279,7 +332,7 @@ app.get('/api/bets', async (req, res) => {
 function mapBetTypeEnumToString(enumValue) {
     const betTypeMapping = [
         'Straight', 'Split', 'Street', 'Corner', 'SixLine',
-        'P12', 'M12', 'D12', 'Column',
+        'P12', 'M12', 'D12', 'Columns',
         'Red', 'Black', 'Even', 'Odd', 'Manque', 'Passe'
     ];
     if (enumValue >= 0 && enumValue < betTypeMapping.length) {
