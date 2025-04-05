@@ -134,6 +134,7 @@ async function listenToBets() {
 
                     // Используем декодированные данные
                     const event = decodedEventData;
+                    console.log(`[Raw Event Data] Signature: ${signature}, Event Name: ${event.name}`); // Добавим имя события
 
                     // Проверяем, не обработали ли мы уже эту транзакцию
                     const existingBet = await BetModel.findOne({ signature: signature }); // Используем signature из logsResult
@@ -145,6 +146,19 @@ async function listenToBets() {
                     // Извлекаем данные из декодированного события 'event'
                     const { player, token_mint, round, bets, timestamp } = event.data;
 
+                    // <<<--- НАЧАЛО: Логирование сырых данных --- >>>
+                    console.log(`[Raw Event Data Details] Player: ${player?.toString()}, Mint: ${token_mint?.toString()}, Round: ${round?.toString()}, Timestamp: ${timestamp?.toString()}`);
+                    if (Array.isArray(bets)) {
+                        bets.forEach((betDetail, index) => {
+                            // Выводим тип данных и строковое представление amount
+                            const rawAmount = betDetail.amount;
+                            const amountType = typeof rawAmount;
+                            const amountString = rawAmount?.toString(); // Безопасно вызываем toString()
+                            console.log(`[Raw Event Data Details] Bet[${index}]: Amount (Raw): ${amountString}, Amount Type: ${amountType}, Type Enum: ${betDetail.bet_type}, Numbers: ${JSON.stringify(betDetail.numbers)}`);
+                        });
+                    } else {
+                        console.log(`[Raw Event Data Details] 'bets' field is not an array or is missing:`, bets);
+                    }
                     // --- Дедупликация ставок (остается как есть) ---
                     const uniqueBetsForDbMap = new Map();
                     bets.forEach(betDetail => {
