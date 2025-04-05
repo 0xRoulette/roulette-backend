@@ -331,9 +331,22 @@ app.get('/api/bets', async (req, res) => {
 // --- Вспомогательная функция маппинга (нужна здесь тоже!) ---
 function mapBetTypeEnumToString(enumValue) {
     const betTypeMapping = [
-        'Straight', 'Split', 'Street', 'Corner', 'SixLine',
-        'P12', 'M12', 'D12', 'Columns',
-        'Red', 'Black', 'Even', 'Odd', 'Manque', 'Passe'
+        'Straight',   // 0
+        'Split',      // 1
+        'Corner',     // 2
+        'Street',     // 3
+        'SixLine',    // 4
+        'FirstFour',  // 5
+        'Red',        // 6
+        'Black',      // 7
+        'Even',       // 8
+        'Odd',        // 9
+        'Manque',     // 10
+        'Passe',      // 11
+        'Columns',    // 12
+        'P12',        // 13
+        'M12',        // 14
+        'D12'         // 15
     ];
     if (enumValue >= 0 && enumValue < betTypeMapping.length) {
         return betTypeMapping[enumValue];
