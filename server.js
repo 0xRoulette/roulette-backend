@@ -145,28 +145,29 @@ async function listenToBets() {
                     // Извлекаем данные из декодированного события 'event'
                     const { player, token_mint, round, bets, timestamp } = event.data;
 
+                    // --- Дедупликация ставок (остается как есть) ---
                     const uniqueBetsForDbMap = new Map();
                     bets.forEach(betDetail => {
-                        // Ключ может включать тип, числа и сумму для уникальности
-                        const betKey = `${betDetail.bet_type}-${betDetail.numbers.sort().join(',')}-${betDetail.amount}`;
+                        const betKey = `${betDetail.bet_type}-${betDetail.numbers.sort().join(',')}-${betDetail.amount.toString()}`; // Используем toString() для ключа
                         if (!uniqueBetsForDbMap.has(betKey)) {
                             uniqueBetsForDbMap.set(betKey, betDetail);
                         }
                     });
                     const uniqueBetsForDb = Array.from(uniqueBetsForDbMap.values());
-
+                    // ---
 
                     // Готовим промисы для сохранения КАЖДОЙ УНИКАЛЬНОЙ ставки из события
-                    const betPromises = uniqueBetsForDb.map(betDetail => { // <<< Используем uniqueBetsForDb
+                    const betPromises = uniqueBetsForDb.map(betDetail => {
+                        // --- ИСПРАВЛЕНИЕ КОНВЕРТАЦИИ BN ---
                         const newBet = new BetModel({
                             player: player.toString(),
-                            round: parseInt(round, 16),
+                            round: Number(round.toString()),                // BN -> Number
                             tokenMint: token_mint.toString(),
-                            betAmount: parseInt(betDetail.amount, 16),
-                            betType: betDetail.bet_type, // Сохраняем числовое значение enum
+                            betAmount: Number(betDetail.amount.toString()), // BN -> Number (lamports)
+                            betType: betDetail.bet_type,                    // enum (number) - оставляем как есть
                             betNumbers: betDetail.numbers.filter(n => n <= 36),
-                            timestamp: new Date(parseInt(timestamp, 16) * 1000),
-                            signature: signature // Связываем каждую запись с транзакцией
+                            timestamp: new Date(Number(timestamp.toString()) * 1000), // BN -> Number -> Date
+                            signature: signature
                         });
                         // Атомарно ищем ПО СИГНАТУРЕ И УНИКАЛЬНОМУ КЛЮЧУ СТАВКИ (для большей надежности)
                         // Или проще оставить поиск только по сигнатуре, как было, т.к. мы уже отфильтровали дубликаты *до* сохранения
