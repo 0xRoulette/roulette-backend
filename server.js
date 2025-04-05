@@ -111,90 +111,146 @@ async function listenToBets() {
                     const existingBet = await BetModel.findOne({ signature: signature });
                     if (existingBet) {
                         console.log(`[ManualDecode] Signature ${signature} already processed and in DB. Skipping.`);
-                        // Не нужно удалять из processingSignatures здесь, т.к. мы выходим
                         return; // Выходим, если уже в БД
                     }
 
-                    // --- Декодирование события (остается) ---
                     // --- Декодирование события ---
                     let decodedEventData = null;
                     const eventName = 'BetsPlaced'; // Имя события из IDL
 
                     for (const log of logs) {
-                        // Стандартный префикс для событий, созданных через emit! в Anchor
                         const logPrefix = "Program data: ";
                         if (log.startsWith(logPrefix)) {
                             try {
-                                // Убираем префикс и получаем Base64 строку
                                 const base64Data = log.substring(logPrefix.length);
-                                // Декодируем Base64 в буфер байт
                                 const eventDataBuffer = anchor.utils.bytes.base64.decode(base64Data);
-                                // Декодируем буфер с помощью кодера и IDL
                                 const event = borshCoder.events.decode(eventDataBuffer);
 
-                                // Проверяем, что декодирование успешно и имя события совпадает
                                 if (event && event.name === eventName) {
                                     console.log(`[ManualDecode] Found and decoded '${eventName}' event in logs for signature ${signature}.`);
-                                    decodedEventData = event; // Сохраняем результат
-                                    break; // Нашли нужное событие, выходим из цикла
+                                    decodedEventData = event;
+                                    break;
                                 } else if (event) {
-                                    // Событие декодировано, но имя не то (на всякий случай)
                                     console.log(`[ManualDecode] Decoded event '${event.name}', but expected '${eventName}'. Skipping log entry.`);
                                 } else {
-                                    // Декодер вернул null или undefined
                                     console.log(`[ManualDecode] Failed to decode event from log entry (borshCoder.events.decode returned null/undefined). Log: ${log}`);
                                 }
                             } catch (decodeError) {
-                                // Ошибка при декодировании Base64 или Borsh
                                 console.error(`[ManualDecode] Error decoding log entry for signature ${signature}. Log: "${log}". Error:`, decodeError);
-                                // Продолжаем цикл, может быть, событие в другой строке
                             }
                         }
                     }
+                    // --- Конец Декодирования ---
 
-                    // ... остальной код ...
                     if (!decodedEventData) {
                         console.log(`[ManualDecode] No 'BetsPlaced' data found or decoded in logs for signature ${signature}`);
-                        // Блокировку надо снять, т.к. выходим
-                        // processingSignatures.delete(signature); // Убрано, т.к. finally сделает это
-                        return;
+                        return; // Выходим, если событие не найдено/декодировано
                     }
+
                     const event = decodedEventData;
                     console.log(`[Raw Event Data] Signature: ${signature}, Event Name: ${event.name}`);
 
-                    // --- Извлечение и логирование сырых данных (остается) ---
+                    // --- Извлечение и логирование сырых данных ---
                     const { player, token_mint, round, bets, timestamp } = event.data;
-                    // ... (логирование сырых данных) ...
-
-                    // --- Дедупликация ставок (остается) ---
-                    const uniqueBetsForDbMap = new Map();
-                    // ... (код дедупликации) ...
-                    const uniqueBetsForDb = Array.from(uniqueBetsForDbMap.values());
-
-                    // --- Сохранение в БД (остается) ---
-                    const betPromises = uniqueBetsForDb.map(betDetail => {
-                        // ... (код сохранения) ...
+                    console.log('[Raw Event Data Details]', {
+                        player: player.toBase58(),
+                        token_mint: token_mint.toBase58(),
+                        round: round.toString(),
+                        timestamp: timestamp.toString(),
+                        betsCount: bets.length
                     });
-                    const results = await Promise.all(betPromises);
-                    // ... (обработка results) ...
+                    bets.forEach((bet, index) => {
+                        console.log(`  [Raw Bet ${index}] Amount: ${bet.amount.toString()}, Type: ${bet.bet_type}, Nums: ${bet.numbers}`);
+                    });
+                    // --- Конец логирования ---
 
-                    // --- Отправка WS (остается, с amount.toString() и т.д.) ---
+                    // --- Дедупликация ставок внутри события ---
+                    const uniqueBetsInEvent = new Map();
+                    bets.forEach(bet => {
+                        const key = `${bet.bet_type}-${bet.numbers.slice().sort().join(',')}`;
+                        if (!uniqueBetsInEvent.has(key)) {
+                            uniqueBetsInEvent.set(key, bet);
+                        } else {
+                            console.log(`[ManualDecode] Duplicate bet type/numbers found within the same event, skipping: Type ${bet.bet_type}, Nums ${bet.numbers}`);
+                        }
+                    });
+                    const uniqueBetsToSave = Array.from(uniqueBetsInEvent.values());
+                    console.log(`[ManualDecode] Found ${uniqueBetsToSave.length} unique bet definitions in this event.`);
+                    // --- Конец дедупликации в событии ---
+
+                    // --- Сохранение в БД ---
+                    // Объявляем переменные ЗДЕСЬ, до цикла сохранения
+                    let savedCount = 0;
+                    let skippedCount = 0;
+                    const savedBetDetailsForSocket = []; // Собираем сохраненные для WS
+
+                    // Создаем массив промисов для сохранения каждой уникальной ставки
+                    const betSavePromises = uniqueBetsToSave.map(async (betDetail) => {
+                        const betDataToSave = {
+                            player: player.toBase58(),
+                            tokenMint: token_mint.toBase58(),
+                            round: Number(round),
+                            betAmount: betDetail.amount.toString(), // Сохраняем СТРОКУ lamports
+                            betType: betDetail.bet_type, // Сохраняем число enum
+                            betNumbers: betDetail.numbers,
+                            timestamp: new Date(Number(timestamp) * 1000), // BN timestamp (сек) -> JS Date
+                            signature: signature
+                        };
+                        try {
+                            // Опциональная проверка на дубликат в БД (раскомментировать при необходимости)
+                            // const existingDbBet = await BetModel.findOne({ signature: signature, betType: betDataToSave.betType, betNumbers: betDataToSave.betNumbers });
+                            // if (existingDbBet) {
+                            //    console.log(`[ManualDecode] Bet already in DB (sig+type+nums): ${signature}. Skipping save.`);
+                            //    skippedCount++; // Увеличиваем счетчик пропущенных
+                            //    return null;
+                            // }
+
+                            console.log(`[ManualDecode] Saving bet detail to DB: Player ${betDataToSave.player}, Round ${betDataToSave.round}, Amount ${betDataToSave.betAmount}, Type ${betDataToSave.betType}`);
+                            const savedBet = await BetModel.create(betDataToSave);
+                            savedCount++; // Увеличиваем счетчик сохраненных
+                            savedBetDetailsForSocket.push({ // Добавляем данные для WS
+                                amount: savedBet.betAmount, // Отправляем строку lamports
+                                bet_type: savedBet.betType, // Отправляем число enum
+                                numbers: savedBet.betNumbers
+                            });
+                            return savedBet;
+                        } catch (dbError) {
+                            console.error(`[ManualDecode] Error saving bet detail (Type: ${betDataToSave.betType}) to DB for signature ${signature}:`, dbError);
+                            skippedCount++; // Увеличиваем счетчик пропущенных/ошибочных
+                            return null;
+                        }
+                    });
+
+                    // Дожидаемся выполнения всех промисов сохранения
+                    await Promise.all(betSavePromises); // Убрали присвоение в results, т.к. не используется
+                    console.log(`[ManualDecode] DB Save Operation Completed: Saved: ${savedCount}, Skipped/Errors: ${skippedCount}`);
+                    // --- Конец сохранения в БД ---
+
+                    // --- Отправка WS ---
+                    // Используем счетчики и данные, собранные ПОСЛЕ цикла сохранения
                     if (savedCount > 0) {
-                        // ... (формирование eventForSocket с toString()) ...
+                        const eventForSocket = {
+                            player: player.toBase58(),
+                            token_mint: token_mint.toBase58(),
+                            round: round.toString(),
+                            timestamp: timestamp.toString(),
+                            bets: savedBetDetailsForSocket // Массив только сохраненных ставок
+                        };
                         io.emit('newBets', { signature, slot, data: eventForSocket });
-                        console.log(`[ManualDecode] Emitted 'newBets' event...`);
+                        console.log(`[ManualDecode] Emitted 'newBets' event with ${savedCount} bet details.`);
                     } else if (skippedCount > 0) {
-                        console.log(`[ManualDecode] Skipped ${skippedCount} already existing/error bet(s)...`);
+                        console.log(`[ManualDecode] Skipped ${skippedCount} bet(s). No emit.`);
+                    } else {
+                        // Эта ветка сработает, если событие BetsPlaced было пустым (bets: [])
+                        console.log(`[ManualDecode] No bets were found in the event to save or skip for signature ${signature}. No emit.`);
                     }
+                    // --- Конец Отправки WS ---
 
-                } catch (error) { // Ловим ошибки основной логики
+                } catch (error) { // Ловим ошибки основной логики (декодирование, сохранение и т.д.)
                     console.error(`[ManualDecode] Error processing logs for signature ${signature}:`, error);
                 } finally {
                     // <<<--- ВАЖНО: Снимаем блокировку в любом случае (успех, ошибка, выход) --- >>>
                     processingSignatures.delete(signature);
-                    // Можно добавить задержку перед удалением, если race condition очень жесткий,
-                    // но обычно простого delete достаточно.
-                    // setTimeout(() => processingSignatures.delete(signature), 500);
                 }
             }, // Конец async (logsResult, context) =>
             'confirmed'
