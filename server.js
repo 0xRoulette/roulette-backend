@@ -93,6 +93,9 @@ async function listenToBets() {
                     return;
                 }
 
+                console.log(`[onLogs] Raw logs array for signature ${signature}:`, JSON.stringify(logs, null, 2));
+
+
                 // <<<--- НАЧАЛО: Блокировка обработки дублирующихся вызовов onLogs --- >>>
                 if (processingSignatures.has(signature)) {
                     console.log(`[onLogs] Signature ${signature} is already being processed. Skipping duplicate call.`);
@@ -113,50 +116,85 @@ async function listenToBets() {
                     }
 
                     // --- Декодирование события (остается) ---
+                    // --- Декодирование события ---
                     let decodedEventData = null;
-                    // ... (цикл декодирования) ...
+                    const eventName = 'BetsPlaced'; // Имя события из IDL
+
+                    for (const log of logs) {
+                        // Стандартный префикс для событий, созданных через emit! в Anchor
+                        const logPrefix = "Program data: ";
+                        if (log.startsWith(logPrefix)) {
+                            try {
+                                // Убираем префикс и получаем Base64 строку
+                                const base64Data = log.substring(logPrefix.length);
+                                // Декодируем Base64 в буфер байт
+                                const eventDataBuffer = anchor.utils.bytes.base64.decode(base64Data);
+                                // Декодируем буфер с помощью кодера и IDL
+                                const event = borshCoder.events.decode(eventDataBuffer);
+
+                                // Проверяем, что декодирование успешно и имя события совпадает
+                                if (event && event.name === eventName) {
+                                    console.log(`[ManualDecode] Found and decoded '${eventName}' event in logs for signature ${signature}.`);
+                                    decodedEventData = event; // Сохраняем результат
+                                    break; // Нашли нужное событие, выходим из цикла
+                                } else if (event) {
+                                    // Событие декодировано, но имя не то (на всякий случай)
+                                    console.log(`[ManualDecode] Decoded event '${event.name}', but expected '${eventName}'. Skipping log entry.`);
+                                } else {
+                                    // Декодер вернул null или undefined
+                                    console.log(`[ManualDecode] Failed to decode event from log entry (borshCoder.events.decode returned null/undefined). Log: ${log}`);
+                                }
+                            } catch (decodeError) {
+                                // Ошибка при декодировании Base64 или Borsh
+                                console.error(`[ManualDecode] Error decoding log entry for signature ${signature}. Log: "${log}". Error:`, decodeError);
+                                // Продолжаем цикл, может быть, событие в другой строке
+                            }
+                        }
+                    }
+
+                    // ... остальной код ...
                     if (!decodedEventData) {
-                         console.log(`[ManualDecode] No 'BetsPlaced' data found or decoded in logs for signature ${signature}`);
-                         // Блокировку надо снять, т.к. выходим
-                         // processingSignatures.delete(signature); // Убрано, т.к. finally сделает это
-                         return;
+                        console.log(`[ManualDecode] No 'BetsPlaced' data found or decoded in logs for signature ${signature}`);
+                        // Блокировку надо снять, т.к. выходим
+                        // processingSignatures.delete(signature); // Убрано, т.к. finally сделает это
+                        return;
                     }
                     const event = decodedEventData;
                     console.log(`[Raw Event Data] Signature: ${signature}, Event Name: ${event.name}`);
 
                     // --- Извлечение и логирование сырых данных (остается) ---
                     const { player, token_mint, round, bets, timestamp } = event.data;
-                     // ... (логирование сырых данных) ...
+                    // ... (логирование сырых данных) ...
 
                     // --- Дедупликация ставок (остается) ---
                     const uniqueBetsForDbMap = new Map();
-                     // ... (код дедупликации) ...
+                    // ... (код дедупликации) ...
                     const uniqueBetsForDb = Array.from(uniqueBetsForDbMap.values());
 
                     // --- Сохранение в БД (остается) ---
                     const betPromises = uniqueBetsForDb.map(betDetail => {
-                         // ... (код сохранения) ...
+                        // ... (код сохранения) ...
                     });
                     const results = await Promise.all(betPromises);
                     // ... (обработка results) ...
 
                     // --- Отправка WS (остается, с amount.toString() и т.д.) ---
                     if (savedCount > 0) {
-                         // ... (формирование eventForSocket с toString()) ...
-                         io.emit('newBets', { signature, slot, data: eventForSocket });
-                         console.log(`[ManualDecode] Emitted 'newBets' event...`);
+                        // ... (формирование eventForSocket с toString()) ...
+                        io.emit('newBets', { signature, slot, data: eventForSocket });
+                        console.log(`[ManualDecode] Emitted 'newBets' event...`);
                     } else if (skippedCount > 0) {
-                         console.log(`[ManualDecode] Skipped ${skippedCount} already existing/error bet(s)...`);
+                        console.log(`[ManualDecode] Skipped ${skippedCount} already existing/error bet(s)...`);
                     }
 
                 } catch (error) { // Ловим ошибки основной логики
                     console.error(`[ManualDecode] Error processing logs for signature ${signature}:`, error);
                 } finally {
-                     // <<<--- ВАЖНО: Снимаем блокировку в любом случае (успех, ошибка, выход) --- >>>
-                     processingSignatures.delete(signature);
-                     // Можно добавить задержку перед удалением, если race condition очень жесткий,
-                     // но обычно простого delete достаточно.
-                     // setTimeout(() => processingSignatures.delete(signature), 500);
+                    // <<<--- ВАЖНО: Снимаем блокировку в любом случае (успех, ошибка, выход) --- >>>
+                    processingSignatures.delete(signature);
+                    // Можно добавить задержку перед удалением, если race condition очень жесткий,
+                    // но обычно простого delete достаточно.
+                    // setTimeout(() => processingSignatures.delete(signature), 500);
                 }
             }, // Конец async (logsResult, context) =>
             'confirmed'
