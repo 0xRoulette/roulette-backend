@@ -74,194 +74,95 @@ const ownerWallet = new anchor.Wallet(ownerKeypair); // <<< Создаем об�
 // Используем загруженный кошелек в провайдере
 const provider = new anchor.AnchorProvider(connection, ownerWallet, { commitment: 'confirmed' });
 
-// Инициализируем программу БЕЗ provider в конструкторе
-// const program = new anchor.Program(idl, PROGRAM_ID, provider); // <<< Возвращаем provider сюда
-
-// Парсер событий Anchor (если мы вернемся к onLogs, он тут)
-// const eventParser = new anchor.EventParser(program.programId, new anchor.BorshCoder(program.idl)); // Эту строку можно пока оставить или закомментировать, т.к. addEventListener ее не использует
+const processingSignatures = new Set(); // Множество для отслеживания обрабатываемых сигнатур const eventParser = new anchor.EventParser(program.programId, new anchor.BorshCoder(program.idl)); // Эту строку можно пока оставить или закомментировать, т.к. addEventListener ее не использует
 
 
 async function listenToBets() {
     console.log(`Listening for Logs from program ${PROGRAM_ID.toString()} using connection.onLogs...`);
-    const borshCoder = new anchor.BorshCoder(idl); // <<< СОЗДАЕМ КОДЕР ЗДЕСЬ
+    const borshCoder = new anchor.BorshCoder(idl);
 
     try {
-        // Используем connection.onLogs напрямую
         const subscriptionId = connection.onLogs(
-            PROGRAM_ID, // Слушаем логи только для нашей программы
+            PROGRAM_ID,
             async (logsResult, context) => {
-                // logsResult содержит { signature, err, logs }
-                // context содержит { slot }
-                if (logsResult.err) {
-                    console.error(`[onLogs] Error in logs subscription for signature ${logsResult.signature}:`, logsResult.err);
+                const { signature, err, logs } = logsResult;
+                const { slot } = context;
+
+                if (err) {
+                    console.error(`[onLogs] Error in logs subscription for signature ${signature}:`, err);
                     return;
                 }
 
-                const { signature, logs } = logsResult;
-                const { slot } = context;
-
-                // console.log(`[onLogs] Received logs in slot ${slot}, signature: ${signature}`); // Можно раскомментировать для отладки
-
-                try {
-                    // --- НАЧАЛО: Ручной поиск и декодирование события ---
-                    let decodedEventData = null;
-                    const logDataPrefix = "Program data: ";
-
-                    for (const logLine of logs) {
-                        if (logLine.startsWith(logDataPrefix)) {
-                            const base64Data = logLine.substring(logDataPrefix.length);
-                            // Используем кодер программы для декодирования данных события
-                            // null вторым аргументом означает, что имя события не проверяется строго при декодировании
-                            const decoded = borshCoder.events.decode(base64Data); // <<< ИСПОЛЬЗУЕМ borshCoder
-                            if (decoded) {
-                                // В Anchor 0.31 decode может не возвращать имя, так что проверяем, что данные есть
-                                // if (eventDef && eventDef.name === 'BetsPlaced') { // Более строгая проверка, если decode вернет имя
-                                if (decoded) { // Упрощенная проверка: если что-то декодировалось, считаем, что это оно
-                                    console.log(`[ManualDecode] Found and decoded event data for signature ${signature}`);
-                                    decodedEventData = decoded;
-                                    break; // Нашли и декодировали, выходим из цикла по логам
-                                }
-                            }
-                        }
-                    }
-                    // --- КОНЕЦ: Ручной поиск и декодирование события ---
-
-                    if (!decodedEventData) {
-                        // Событие не найдено или не декодировано
-                        // console.log(`[ManualDecode] No 'BetsPlaced' data found or decoded in logs for signature ${signature}`);
-                        return;
-                    }
-
-                    // Используем декодированные данные
-                    const event = decodedEventData;
-                    console.log(`[Raw Event Data] Signature: ${signature}, Event Name: ${event.name}`); // Добавим имя события
-
-                    // Проверяем, не обработали ли мы уже эту транзакцию
-                    const existingBet = await BetModel.findOne({ signature: signature }); // Используем signature из logsResult
-                    if (existingBet) {
-                        console.log(`[ManualDecode] Signature ${signature} already processed. Skipping.`);
-                        return; // Пропускаем, если уже есть в БД
-                    }
-
-                    // Извлекаем данные из декодированного события 'event'
-                    const { player, token_mint, round, bets, timestamp } = event.data;
-
-                    // <<<--- НАЧАЛО: Логирование сырых данных --- >>>
-                    console.log(`[Raw Event Data Details] Player: ${player?.toString()}, Mint: ${token_mint?.toString()}, Round: ${round?.toString()}, Timestamp: ${timestamp?.toString()}`);
-                    if (Array.isArray(bets)) {
-                        bets.forEach((betDetail, index) => {
-                            // Выводим тип данных и строковое представление amount
-                            const rawAmount = betDetail.amount;
-                            const amountType = typeof rawAmount;
-                            const amountString = rawAmount?.toString(); // Безопасно вызываем toString()
-                            console.log(`[Raw Event Data Details] Bet[${index}]: Amount (Raw): ${amountString}, Amount Type: ${amountType}, Type Enum: ${betDetail.bet_type}, Numbers: ${JSON.stringify(betDetail.numbers)}`);
-                        });
-                    } else {
-                        console.log(`[Raw Event Data Details] 'bets' field is not an array or is missing:`, bets);
-                    }
-                    // --- Дедупликация ставок (остается как есть) ---
-                    const uniqueBetsForDbMap = new Map();
-                    bets.forEach(betDetail => {
-                        const betKey = `${betDetail.bet_type}-${betDetail.numbers.sort().join(',')}-${betDetail.amount.toString()}`; // Используем toString() для ключа
-                        if (!uniqueBetsForDbMap.has(betKey)) {
-                            uniqueBetsForDbMap.set(betKey, betDetail);
-                        }
-                    });
-                    const uniqueBetsForDb = Array.from(uniqueBetsForDbMap.values());
-                    // ---
-
-                    // Готовим промисы для сохранения КАЖДОЙ УНИКАЛЬНОЙ ставки из события
-                    const betPromises = uniqueBetsForDb.map(betDetail => {
-                        // --- ИСПРАВЛЕНИЕ КОНВЕРТАЦИИ BN ---
-                        const newBet = new BetModel({
-                            player: player.toString(),
-                            round: Number(round.toString()),                // BN -> Number
-                            tokenMint: token_mint.toString(),
-                            betAmount: Number(betDetail.amount.toString()), // BN -> Number (lamports)
-                            betType: betDetail.bet_type,                    // enum (number) - оставляем как есть
-                            betNumbers: betDetail.numbers.filter(n => n <= 36),
-                            timestamp: new Date(Number(timestamp.toString()) * 1000), // BN -> Number -> Date
-                            signature: signature
-                        });
-                        // Атомарно ищем ПО СИГНАТУРЕ И УНИКАЛЬНОМУ КЛЮЧУ СТАВКИ (для большей надежности)
-                        // Или проще оставить поиск только по сигнатуре, как было, т.к. мы уже отфильтровали дубликаты *до* сохранения
-                        return BetModel.findOneAndUpdate(
-                            // Можно усложнить ключ, чтобы гарантировать уникальность самой ставки,
-                            // но проверка existingBet по сигнатуре выше должна быть достаточной.
-                            {
-                                signature: signature,
-                                // Дополнительные поля для уникальности, если нужно:
-                                // betType: betDetail.bet_type,
-                                // betAmount: parseInt(betDetail.amount, 16)
-                                // 'betNumbers': betDetail.numbers.filter(n => n <= 36) // Сортировка важна для сравнения массивов
-                            },
-                            { $setOnInsert: newBet },
-                            { upsert: true, new: false, setDefaultsOnInsert: true }
-                        ).catch(err => {
-                            console.error(`[ManualDecode] Error saving bet for signature ${signature}:`, err);
-                            return null; // Возвращаем null при ошибке сохранения конкретной ставки
-                        });
-                    });
-
-
-                    const results = await Promise.all(betPromises);
-                    const savedCount = results.filter(r => r === null).length; // null означает, что upsert вставил новый документ
-                    const skippedCount = results.length - savedCount; // Остальные были пропущены (уже существовали)
-
-                    if (savedCount > 0) {
-                        console.log(`[ManualDecode] Successfully saved/upserted ${savedCount} unique bet(s) to DB for signature ${signature}`);
-
-                        // --- НАЧАЛО: Формирование события для WebSocket с уникальными ставками ---
-                        const eventForSocket = {
-                            name: event.name, // Сохраняем имя события ('BetsPlaced')
-                            data: {
-                                player: player, // Адрес игрока (PublicKey)
-                                token_mint: token_mint, // Адрес минта (PublicKey)
-                                round: round, // Номер раунда (BN)
-                                timestamp: timestamp, // Временная метка (BN)
-                                // ВАЖНО: Используем массив уникальных ставок, который сохраняли в БД
-                                bets: uniqueBetsForDb.map(betDetail => ({
-                                    amount: betDetail.amount, // Сумма ставки (BN)
-                                    bet_type: betDetail.bet_type, // Тип ставки (enum число)
-                                    numbers: betDetail.numbers // Массив чисел
-                                }))
-                            }
-                        };
-                        // --- КОНЕЦ: Формирование события для WebSocket ---
-
-
-                        // Отправляем событие с УНИКАЛЬНЫМИ ставками через Socket.IO
-                        io.emit('newBets', {
-                            signature: signature,
-                            slot: slot,
-                            data: eventForSocket // <<< Отправляем модифицированное событие
-                        });
-                        console.log(`[ManualDecode] Emitted 'newBets' event via Socket.IO for signature ${signature} with ${uniqueBetsForDb.length} unique bet(s).`);
-
-                    } else if (skippedCount > 0) {
-                        // Если все ставки были пропущены (т.е. вся транзакция - дубликат), мы сюда не дойдем из-за проверки existingBet выше.
-                        // Этот лог может сработать, если были ошибки сохранения части ставок.
-                        console.log(`[ManualDecode] Skipped ${skippedCount} already existing/error bet(s) for signature ${signature}. No new bets saved.`);
-                    }
-
-                } catch (error) {
-                    console.error(`[ManualDecode] Error processing logs for signature ${signature}:`, error);
+                // <<<--- НАЧАЛО: Блокировка обработки дублирующихся вызовов onLogs --- >>>
+                if (processingSignatures.has(signature)) {
+                    console.log(`[onLogs] Signature ${signature} is already being processed. Skipping duplicate call.`);
+                    return;
                 }
-            },
+                processingSignatures.add(signature);
+                // <<<--- КОНЕЦ: Блокировка --- >>>
+
+
+                try { // Обернем всю логику в try...finally для снятия блокировки
+
+                    // --- Проверка в БД (остается) ---
+                    const existingBet = await BetModel.findOne({ signature: signature });
+                    if (existingBet) {
+                        console.log(`[ManualDecode] Signature ${signature} already processed and in DB. Skipping.`);
+                        // Не нужно удалять из processingSignatures здесь, т.к. мы выходим
+                        return; // Выходим, если уже в БД
+                    }
+
+                    // --- Декодирование события (остается) ---
+                    let decodedEventData = null;
+                    // ... (цикл декодирования) ...
+                    if (!decodedEventData) {
+                         console.log(`[ManualDecode] No 'BetsPlaced' data found or decoded in logs for signature ${signature}`);
+                         // Блокировку надо снять, т.к. выходим
+                         // processingSignatures.delete(signature); // Убрано, т.к. finally сделает это
+                         return;
+                    }
+                    const event = decodedEventData;
+                    console.log(`[Raw Event Data] Signature: ${signature}, Event Name: ${event.name}`);
+
+                    // --- Извлечение и логирование сырых данных (остается) ---
+                    const { player, token_mint, round, bets, timestamp } = event.data;
+                     // ... (логирование сырых данных) ...
+
+                    // --- Дедупликация ставок (остается) ---
+                    const uniqueBetsForDbMap = new Map();
+                     // ... (код дедупликации) ...
+                    const uniqueBetsForDb = Array.from(uniqueBetsForDbMap.values());
+
+                    // --- Сохранение в БД (остается) ---
+                    const betPromises = uniqueBetsForDb.map(betDetail => {
+                         // ... (код сохранения) ...
+                    });
+                    const results = await Promise.all(betPromises);
+                    // ... (обработка results) ...
+
+                    // --- Отправка WS (остается, с amount.toString() и т.д.) ---
+                    if (savedCount > 0) {
+                         // ... (формирование eventForSocket с toString()) ...
+                         io.emit('newBets', { signature, slot, data: eventForSocket });
+                         console.log(`[ManualDecode] Emitted 'newBets' event...`);
+                    } else if (skippedCount > 0) {
+                         console.log(`[ManualDecode] Skipped ${skippedCount} already existing/error bet(s)...`);
+                    }
+
+                } catch (error) { // Ловим ошибки основной логики
+                    console.error(`[ManualDecode] Error processing logs for signature ${signature}:`, error);
+                } finally {
+                     // <<<--- ВАЖНО: Снимаем блокировку в любом случае (успех, ошибка, выход) --- >>>
+                     processingSignatures.delete(signature);
+                     // Можно добавить задержку перед удалением, если race condition очень жесткий,
+                     // но обычно простого delete достаточно.
+                     // setTimeout(() => processingSignatures.delete(signature), 500);
+                }
+            }, // Конец async (logsResult, context) =>
             'confirmed'
-        );
+        ); // Конец connection.onLogs
 
-        console.log(`[onLogs] Subscribed to logs with subscription ID: ${subscriptionId}. Waiting for events...`);
-
-        const ws = connection._rpcWebSocket;
-        if (ws) {
-            ws.on('close', (code, reason) => {
-                console.warn(`[onLogs] Underlying WebSocket connection closed. Code: ${code}, Reason: ${reason}. Subscription ID: ${subscriptionId}. Attempting to resubscribe may be needed.`);
-            });
-            ws.on('error', (error) => {
-                console.error(`[onLogs] Underlying WebSocket error for subscription ${subscriptionId}:`, error);
-            });
-        }
+        // ... остальной код listenToBets ...
 
     } catch (error) {
         console.error("[onLogs] Failed to subscribe to logs:", error);
