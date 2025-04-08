@@ -8,7 +8,7 @@ const betSchema = new mongoose.Schema({
     betType: { type: Number, required: true },   // Тип ставки (числовой)
     betNumbers: [{ type: Number }],              // Числа, на которые поставлено (массив)
     timestamp: { type: Date, required: true },   // Время ставки (из события блокчейна)
-    signature: { type: String, required: true, unique: true } // Сигнатура транзакции, чтобы избежать дубликатов
+    signature: { type: String, required: true } // Сигнатура транзакции, чтобы избежать дубликатов
 });
 
 // Добавляем составной индекс для оптимизации запросов, если понадобится
