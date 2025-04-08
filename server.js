@@ -58,7 +58,7 @@ const anchor = require('@coral-xyz/anchor');
 const BetModel = require('./models/Bet');
 
 // --- Константы Solana ---
-const PROGRAM_ID = new PublicKey('GZB6nqB9xSC8VKwWajtCu2TotPXz1mZCR5VwMLEKDj81');
+const PROGRAM_ID = new PublicKey('5uGLacG7vComVQcqTbCnoASgjbQhBFMkvBV4ZH1Mvk2t');
 const idl = require('./roulette_game.json');
 const connection = new Connection(QUICKNODE_RPC, { // <<< Добавляем объект конфигурации
     wsEndpoint: QUICKNODE_WSS,                    // <<< Указываем WSS адрес
