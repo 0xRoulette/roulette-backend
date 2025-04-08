@@ -4,6 +4,16 @@ const { Server } = require("socket.io");
 const mongoose = require('mongoose');
 const fs = require('fs')
 const cors = require('cors'); // <<< Добавляем эту строку
+const BN = require('bn.js'); // <<< Убедись, что BN импортирован (нужен для сумм)
+const anchor = require('@coral-xyz/anchor');
+const BetModel = require('./models/Bet');
+const RoundPayoutModel = require('./models/RoundPayout'); // <<< Импортируем новую модель
+const { MerkleTree } = require('merkletreejs');
+const keccak256 = require('keccak256');
+
+const program = new anchor.Program(idl, PROGRAM_ID, provider);
+
+
 
 const app = express();
 app.use(cors({
@@ -24,6 +34,25 @@ const PORT = process.env.PORT || 3001; // Порт для бэкенда
 // Подключение к MongoDB (замени 'your_mongodb_connection_string' на твою строку подключения)
 // Пример: 'mongodb://localhost:27017/roulette'
 const { QUICKNODE_RPC, MONGO_URI, QUICKNODE_WSS } = require('./config'); // <<< Добавлено
+
+const BET_TYPE_STRAIGHT = 0;
+const BET_TYPE_SPLIT = 1;
+const BET_TYPE_CORNER = 2;
+const BET_TYPE_STREET = 3;
+const BET_TYPE_SIX_LINE = 4;
+const BET_TYPE_FIRST_FOUR = 5; // На 0, 1, 2, 3
+const BET_TYPE_RED = 6;
+const BET_TYPE_BLACK = 7;
+const BET_TYPE_EVEN = 8;
+const BET_TYPE_ODD = 9;
+const BET_TYPE_MANQUE = 10; // 1-18
+const BET_TYPE_PASSE = 11; // 19-36
+const BET_TYPE_COLUMN = 12; // Исправлено с Columns
+const BET_TYPE_P12 = 13; // 1-12
+const BET_TYPE_M12 = 14; // 13-24
+const BET_TYPE_D12 = 15; // 25-36
+
+const RED_NUMBERS = new Set([1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36]);
 
 mongoose.connect(MONGO_URI)
     .then(() => console.log('MongoDB Connected'))
@@ -47,9 +76,8 @@ io.on('connection', (socket) => {
 
 server.listen(PORT, () => {
     console.log(`Server listening on *:${PORT}`);
-    // Задержка убрана, слушатель запускается сразу
     console.log("Attaching event listener now...");
-    listenToBets(); // Вызываем функцию напрямую
+    listenToBets();
 });
 
 // --- Логика для Solana ---
@@ -93,31 +121,21 @@ async function listenToBets() {
                     return;
                 }
 
-                console.log(`[onLogs] Raw logs array for signature ${signature}:`, JSON.stringify(logs, null, 2));
-
-
-                // <<<--- НАЧАЛО: Блокировка обработки дублирующихся вызовов onLogs --- >>>
                 if (processingSignatures.has(signature)) {
-                    console.log(`[onLogs] Signature ${signature} is already being processed. Skipping duplicate call.`);
+                    // console.log(`[onLogs] Signature ${signature} is already being processed. Skipping.`); // Можно раскомментировать для отладки
                     return;
                 }
                 processingSignatures.add(signature);
-                // <<<--- КОНЕЦ: Блокировка --- >>>
+                console.log(`[onLogs] Processing signature: ${signature} at slot ${slot}`);
 
-
-                try { // Обернем всю логику в try...finally для снятия блокировки
-
-                    // --- Проверка в БД (остается) ---
+                try {
                     const existingBet = await BetModel.findOne({ signature: signature });
-                    if (existingBet) {
-                        console.log(`[ManualDecode] Signature ${signature} already processed and in DB. Skipping.`);
-                        return; // Выходим, если уже в БД
-                    }
+                    let isBetsPlacedProcessed = !!existingBet;
 
-                    // --- Декодирование события ---
-                    let decodedEventData = null;
-                    const eventName = 'BetsPlaced'; // Имя события из IDL
+                    let decodedBetsPlaced = null;
+                    let decodedRandomGenerated = null;
 
+                    // Декодирование событий из логов
                     for (const log of logs) {
                         const logPrefix = "Program data: ";
                         if (log.startsWith(logPrefix)) {
@@ -126,149 +144,254 @@ async function listenToBets() {
                                 const eventDataBuffer = anchor.utils.bytes.base64.decode(base64Data);
                                 const event = borshCoder.events.decode(eventDataBuffer);
 
-                                if (event && event.name === eventName) {
-                                    console.log(`[ManualDecode] Found and decoded '${eventName}' event in logs for signature ${signature}.`);
-                                    decodedEventData = event;
-                                    break;
-                                } else if (event) {
-                                    console.log(`[ManualDecode] Decoded event '${event.name}', but expected '${eventName}'. Skipping log entry.`);
-                                } else {
-                                    console.log(`[ManualDecode] Failed to decode event from log entry (borshCoder.events.decode returned null/undefined). Log: ${log}`);
+                                if (event) {
+                                    // console.log(`[EventDecode] Decoded event '${event.name}' for signature ${signature}.`); // Можно раскомментировать
+                                    if (event.name === 'BetsPlaced') {
+                                        decodedBetsPlaced = event;
+                                    } else if (event.name === 'RandomGenerated') {
+                                        decodedRandomGenerated = event;
+                                    }
+                                    // Можно добавить обработку PayoutRootSubmitted и PayoutClaimed, если нужно что-то логировать/эмитить
                                 }
                             } catch (decodeError) {
-                                console.error(`[ManualDecode] Error decoding log entry for signature ${signature}. Log: "${log}". Error:`, decodeError);
+                                // console.error(`[EventDecode] Error decoding log entry for signature ${signature}. Log: "${log}". Error:`, decodeError); // Можно раскомментировать
                             }
                         }
+                    } // Конец цикла по логам
+
+                    // --- Обработка BetsPlaced (Сохранение ставок) ---
+                    if (decodedBetsPlaced && !isBetsPlacedProcessed) {
+                        console.log(`[BetsPlaced] Processing event for signature ${signature}...`);
+                        const event = decodedBetsPlaced;
+                        const { player, token_mint, round, bets, timestamp } = event.data;
+
+                        // Сохраняем каждую ставку из события в БД
+                        let savedCount = 0;
+                        const savedBetDetailsForSocket = [];
+
+                        const betSavePromises = bets.map(async (betDetail) => {
+                            const betDataToSave = {
+                                player: player.toBase58(),
+                                tokenMint: token_mint.toBase58(),
+                                round: Number(round),
+                                betAmount: betDetail.amount.toString(),
+                                betType: betDetail.bet_type,
+                                betNumbers: betDetail.numbers, // Контракт отдает [u8; 4]
+                                timestamp: new Date(Number(timestamp) * 1000),
+                                signature: signature // Сохраняем сигнатуру транзакции
+                            };
+                            try {
+                                // Используем findOneAndUpdate с upsert=true для идемпотентности на случай повторов
+                                await BetModel.findOneAndUpdate(
+                                    { signature: signature, player: betDataToSave.player, round: betDataToSave.round, betType: betDataToSave.betType, 'betNumbers': betDataToSave.betNumbers }, // Уникальный ключ ставки в транзакции
+                                    betDataToSave,
+                                    { upsert: true, new: true }
+                                );
+                                savedCount++;
+                                savedBetDetailsForSocket.push({
+                                    amount: betDataToSave.betAmount,
+                                    bet_type: betDataToSave.betType,
+                                    numbers: betDataToSave.betNumbers
+                                });
+                            } catch (dbError) {
+                                console.error(`[BetsPlaced] Error saving bet detail to DB for signature ${signature}:`, dbError);
+                            }
+                        });
+                        await Promise.all(betSavePromises);
+                        console.log(`[BetsPlaced] DB Save/Upsert Completed for ${savedCount} bets.`);
+
+                        // Отправляем событие в Socket.IO, если были сохранены ставки
+                        if (savedCount > 0) {
+                            const eventForSocket = {
+                                player: player.to_base58(), // Используем to_base58 для PublicKey
+                                token_mint: token_mint.toBase58(),
+                                round: round.toString(),
+                                timestamp: timestamp.toString(),
+                                bets: savedBetDetailsForSocket,
+                                signature: signature
+                            };
+                            io.emit('newBets', eventForSocket); // <<< ЭМИТИМ событие для фронтенда
+                            console.log(`[BetsPlaced] Emitted 'newBets' event via Socket.IO.`);
+                        }
+                        isBetsPlacedProcessed = true;
+                    } else if (decodedBetsPlaced && isBetsPlacedProcessed) {
+                        // console.log(`[BetsPlaced] Signature ${signature} already processed (found in DB). Skipping BetsPlaced event.`);
                     }
-                    // --- Конец Декодирования ---
 
-                    if (!decodedEventData) {
-                        console.log(`[ManualDecode] No 'BetsPlaced' data found or decoded in logs for signature ${signature}`);
-                        return; // Выходим, если событие не найдено/декодировано
-                    }
+                    // --- Обработка RandomGenerated (Расчет выигрышей, Merkle Tree, Отправка корня) ---
+                    if (decodedRandomGenerated) {
+                        console.log(`[RandomGenerated] Processing event for signature ${signature}...`);
+                        const event = decodedRandomGenerated;
+                        // Извлекаем данные из события RandomGenerated контракта
+                        const { round, winning_number, generation_time } = event.data;
+                        const roundNum = Number(round);
+                        const winningNum = Number(winning_number);
 
-                    const event = decodedEventData;
-                    console.log(`[Raw Event Data] Signature: ${signature}, Event Name: ${event.name}`);
+                        console.log(`[RandomGenerated] Round: ${roundNum}, Winning Number: ${winningNum}`);
 
-                    // --- Извлечение и логирование сырых данных ---
-                    const { player, token_mint, round, bets, timestamp } = event.data;
-                    console.log('[Raw Event Data Details]', {
-                        player: player.toBase58(),
-                        token_mint: token_mint.toBase58(),
-                        round: round.toString(),
-                        timestamp: timestamp.toString(),
-                        betsCount: bets.length
-                    });
-                    bets.forEach((bet, index) => {
-                        console.log(`  [Raw Bet ${index}] Amount: ${bet.amount.toString()}, Type: ${bet.bet_type}, Nums: ${bet.numbers}`);
-                    });
-                    // --- Конец логирования ---
+                        // 1. Проверка, не обработан ли уже раунд
+                        const existingRoundPayout = await RoundPayoutModel.findOne({ round: roundNum });
+                        if (existingRoundPayout) {
+                            console.warn(`[RandomGenerated] Round ${roundNum} payout already processed/stored. Skipping.`);
+                            return; // Выходим, если раунд уже обработан
+                        }
 
-                    // --- Дедупликация ставок внутри события ---
-                    const uniqueBetsInEvent = new Map();
-                    bets.forEach(bet => {
-                        const key = `${bet.bet_type}-${bet.numbers.slice().sort().join(',')}`;
-                        if (!uniqueBetsInEvent.has(key)) {
-                            uniqueBetsInEvent.set(key, bet);
+                        // 2. Получение всех ставок раунда из БД
+                        const betsForRound = await BetModel.find({ round: roundNum });
+                        console.log(`[RandomGenerated] Found ${betsForRound.length} bet records in DB for round ${roundNum}.`);
+
+                        let merkleTree = null;
+                        let payoutRootHex = null;
+                        let payoutLeavesData = [];
+                        let rootBuffer = Buffer.alloc(32); // Корень по умолчанию (для пустого раунда)
+
+                        if (betsForRound.length > 0) {
+                            // 3. Расчет выигрышей для каждого игрока
+                            const playerPayouts = new Map(); // <playerAddress, totalPayoutBN>
+                            for (const betRecord of betsForRound) {
+                                const betAmount = new BN(betRecord.betAmount);
+                                if (isBetWinner(betRecord.betType, betRecord.betNumbers, winningNum)) {
+                                    const multiplier = calculatePayoutMultiplier(betRecord.betType);
+                                    const payoutForBet = betAmount.mul(multiplier);
+                                    const playerAddress = betRecord.player;
+                                    const currentTotal = playerPayouts.get(playerAddress) || new BN(0);
+                                    playerPayouts.set(playerAddress, currentTotal.add(payoutForBet));
+                                }
+                            }
+                            console.log(`[RandomGenerated] Calculated payouts for ${playerPayouts.size} winners.`);
+
+                            // 4. Подготовка данных и построение Merkle Tree
+                            payoutLeavesData = Array.from(playerPayouts.entries()).map(([address, amount]) => ({
+                                address: address,
+                                amount: amount // Оставляем BN
+                            }));
+
+                            try {
+                                console.log("[RandomGenerated] Building Merkle Tree...");
+                                const leaves = payoutLeavesData.map(payout => {
+                                    const addressBuffer = new PublicKey(payout.address).toBuffer();
+                                    const amountBuffer = payout.amount.toArrayLike(Buffer, 'le', 8); // u64 little-endian
+                                    const packedData = Buffer.concat([addressBuffer, amountBuffer]);
+                                    return keccak256(packedData);
+                                });
+
+                                if (leaves.length > 0) {
+                                    merkleTree = new MerkleTree(leaves, keccak256, { sortPairs: true });
+                                    rootBuffer = merkleTree.getRoot(); // Получаем Buffer корня
+                                }
+                                // Если leaves пустой (никто не выиграл), rootBuffer останется пустым (Buffer.alloc(32))
+
+                                payoutRootHex = '0x' + rootBuffer.toString('hex');
+                                console.log(`[RandomGenerated] Merkle Tree built. Root: ${payoutRootHex}`);
+
+                            } catch (merkleError) {
+                                console.error(`[RandomGenerated] Error building Merkle Tree for round ${roundNum}:`, merkleError);
+                                payoutRootHex = null; // Сбрасываем корень при ошибке
+                            }
                         } else {
-                            console.log(`[ManualDecode] Duplicate bet type/numbers found within the same event, skipping: Type ${bet.bet_type}, Nums ${bet.numbers}`);
+                            console.log(`[RandomGenerated] No bets found for round ${roundNum}. Using empty Merkle Root.`);
+                            payoutRootHex = '0x' + rootBuffer.toString('hex'); // Корень для пустого раунда
                         }
-                    });
-                    const uniqueBetsToSave = Array.from(uniqueBetsInEvent.values());
-                    console.log(`[ManualDecode] Found ${uniqueBetsToSave.length} unique bet definitions in this event.`);
-                    // --- Конец дедупликации в событии ---
 
-                    // --- Сохранение в БД ---
-                    // Объявляем переменные ЗДЕСЬ, до цикла сохранения
-                    let savedCount = 0;
-                    let skippedCount = 0;
-                    const savedBetDetailsForSocket = []; // Собираем сохраненные для WS
+                        // 5. Вызов ончейн инструкции submit_payout_root
+                        let submitTxSignature = null;
+                        let submitError = null;
+                        if (payoutRootHex) {
+                            console.log(`[RandomGenerated] Attempting to submit payout root ${payoutRootHex} for round ${roundNum}...`);
+                            try {
+                                // Находим PDA для RoundPayoutInfo (куда будет записан корень)
+                                const [roundPayoutInfoPDA, _payoutBump] = PublicKey.findProgramAddressSync(
+                                    [Buffer.from("payout_info"), new BN(roundNum).toArrayLike(Buffer, 'le', 8)],
+                                    program.programId
+                                );
+                                // Находим PDA для GameSession (нужен для проверок в контракте)
+                                const [gameSessionPDA, _sessionBump] = PublicKey.findProgramAddressSync(
+                                    [Buffer.from("game_session")], // Сиды для game_session (без номера раунда)
+                                    program.programId
+                                );
 
-                    // Создаем массив промисов для сохранения каждой уникальной ставки
-                    const betSavePromises = uniqueBetsToSave.map(async (betDetail) => {
-                        const betDataToSave = {
-                            player: player.toBase58(),
-                            tokenMint: token_mint.toBase58(),
-                            round: Number(round),
-                            betAmount: betDetail.amount.toString(), // Сохраняем СТРОКУ lamports
-                            betType: betDetail.bet_type, // Сохраняем число enum
-                            betNumbers: betDetail.numbers,
-                            timestamp: new Date(Number(timestamp) * 1000), // BN timestamp (сек) -> JS Date
-                            signature: signature
-                        };
-                        try {
-                            // Опциональная проверка на дубликат в БД (раскомментировать при необходимости)
-                            // const existingDbBet = await BetModel.findOne({ signature: signature, betType: betDataToSave.betType, betNumbers: betDataToSave.betNumbers });
-                            // if (existingDbBet) {
-                            //    console.log(`[ManualDecode] Bet already in DB (sig+type+nums): ${signature}. Skipping save.`);
-                            //    skippedCount++; // Увеличиваем счетчик пропущенных
-                            //    return null;
-                            // }
+                                console.log(`[SubmitRoot] Using GameSession PDA: ${gameSessionPDA.toBase58()}`);
+                                console.log(`[SubmitRoot] Using RoundPayoutInfo PDA: ${roundPayoutInfoPDA.toBase58()}`);
 
-                            console.log(`[ManualDecode] Saving bet detail to DB: Player ${betDataToSave.player}, Round ${betDataToSave.round}, Amount ${betDataToSave.betAmount}, Type ${betDataToSave.betType}`);
-                            const savedBet = await BetModel.create(betDataToSave);
-                            savedCount++; // Увеличиваем счетчик сохраненных
-                            savedBetDetailsForSocket.push({ // Добавляем данные для WS
-                                amount: savedBet.betAmount, // Отправляем строку lamports
-                                bet_type: savedBet.betType, // Отправляем число enum
-                                numbers: savedBet.betNumbers
-                            });
-                            return savedBet;
-                        } catch (dbError) {
-                            // <<< НАЧАЛО ИЗМЕНЕНИЯ: Улучшенное логирование ошибок БД >>>
-                            console.error(`[ManualDecode] Error saving bet detail (Type: ${betDataToSave.betType}) to DB for signature ${signature}:`, {
-                                message: dbError.message,
-                                code: dbError.code, // Логируем код ошибки MongoDB (например, 11000 для дубликата)
-                                name: dbError.name,
-                                fullError: dbError // Логируем весь объект ошибки для детального анализа
-                            });
-                            // <<< КОНЕЦ ИЗМЕНЕНИЯ >>>
-                            skippedCount++; // Увеличиваем счетчик пропущенных/ошибочных
-                            return null;
+                                submitTxSignature = await program.methods
+                                    .submitPayoutRoot(new BN(roundNum), [...rootBuffer]) // rootBuffer как массив байт
+                                    .accounts({
+                                        authority: ownerWallet.publicKey, // Авторитет бэкенда
+                                        gameSession: gameSessionPDA,
+                                        roundPayoutInfo: roundPayoutInfoPDA,
+                                        systemProgram: anchor.web3.SystemProgram.programId,
+                                        // rent: anchor.web3.SYSVAR_RENT_PUBKEY, // Rent неявно используется Anchor при init
+                                    })
+                                    // .signers([ownerKeypair]) // Provider сам подписывает, если он authority
+                                    .rpc({ commitment: 'confirmed', skipPreflight: true }); // Пропускаем preflight для init
+
+                                console.log(`[RandomGenerated] Successfully submitted payout root for round ${roundNum}. Tx: ${submitTxSignature}`);
+
+                            } catch (error) {
+                                console.error(`[RandomGenerated] Error submitting payout root for round ${roundNum}:`, error);
+                                submitError = error.toString();
+                            }
+                        } else {
+                            console.warn(`[RandomGenerated] Skipping on-chain submission for round ${roundNum} due to Merkle build errors.`);
                         }
-                    });
 
-                    // Дожидаемся выполнения всех промисов сохранения
-                    await Promise.all(betSavePromises); // Убрали присвоение в results, т.к. не используется
-                    console.log(`[ManualDecode] DB Save Operation Completed: Saved: ${savedCount}, Skipped/Errors: ${skippedCount}`);
-                    // --- Конец сохранения в БД ---
+                        // 6. Сохранение данных о раунде (корень, выплаты) в БД
+                        if (payoutRootHex) {
+                            console.log("[RandomGenerated] Saving payout info to DB for round", roundNum);
+                            try {
+                                const payoutDataToSave = payoutLeavesData.map(p => ({
+                                    address: p.address,
+                                    amount: p.amount.toString() // Сохраняем как строку
+                                }));
 
-                    // --- Отправка WS ---
-                    // Используем счетчики и данные, собранные ПОСЛЕ цикла сохранения
-                    if (savedCount > 0) {
-                        const eventForSocket = {
-                            player: player.toBase58(),
-                            token_mint: token_mint.toBase58(),
-                            round: round.toString(),
-                            timestamp: timestamp.toString(),
-                            bets: savedBetDetailsForSocket // Массив только сохраненных ставок
-                        };
-                        io.emit('newBets', { signature, slot, data: eventForSocket });
-                        console.log(`[ManualDecode] Emitted 'newBets' event with ${savedCount} bet details.`);
-                    } else if (skippedCount > 0) {
-                        console.log(`[ManualDecode] Skipped ${skippedCount} bet(s). No emit.`);
-                    } else {
-                        // Эта ветка сработает, если событие BetsPlaced было пустым (bets: [])
-                        console.log(`[ManualDecode] No bets were found in the event to save or skip for signature ${signature}. No emit.`);
-                    }
-                    // --- Конец Отправки WS ---
+                                await RoundPayoutModel.create({
+                                    round: roundNum,
+                                    payoutRootHex: payoutRootHex,
+                                    payouts: payoutDataToSave,
+                                    winningNumber: winningNum,
+                                    onChainSubmitTx: submitTxSignature,
+                                    onChainSubmitError: submitError // Сохраняем ошибку, если была
+                                });
+                                console.log(`[RandomGenerated] Successfully saved payout data for round ${roundNum} to DB.`);
 
-                } catch (error) { // Ловим ошибки основной логики (декодирование, сохранение и т.д.)
-                    console.error(`[ManualDecode] Error processing logs for signature ${signature}:`, error);
+                                // <<< ЭМИТИМ событие о завершении раунда и доступности выплат (опционально)
+                                io.emit('roundCompleted', {
+                                    round: roundNum,
+                                    winningNumber: winningNum,
+                                    payoutRoot: payoutRootHex,
+                                    submitTx: submitTxSignature,
+                                    timestamp: Math.floor(Date.now() / 1000)
+                                });
+                                console.log(`[RandomGenerated] Emitted 'roundCompleted' event via Socket.IO.`);
+
+                            } catch (dbError) {
+                                console.error(`[RandomGenerated] Error saving payout data for round ${roundNum} to DB:`, dbError);
+                            }
+                        } else {
+                            console.warn(`[RandomGenerated] Skipping DB save for round ${roundNum} because payout root was not generated.`);
+                        }
+                    } // Конец обработки RandomGenerated
+
+                } catch (processingError) {
+                    console.error(`[onLogs] Error processing signature ${signature}:`, processingError);
                 } finally {
-                    // <<<--- ВАЖНО: Снимаем блокировку в любом случае (успех, ошибка, выход) --- >>>
                     processingSignatures.delete(signature);
+                    // console.log(`[onLogs] Finished processing signature ${signature}.`); // Можно раскомментировать
                 }
-            }, // Конец async (logsResult, context) =>
-            'confirmed'
-        ); // Конец connection.onLogs
 
-        // ... остальной код listenToBets ...
+            }, // Конец async колбэка onLogs
+            'confirmed'
+        );
+
+        console.log(`[onLogs] Successfully subscribed to logs. Subscription ID: ${subscriptionId}`);
 
     } catch (error) {
         console.error("[onLogs] Failed to subscribe to logs:", error);
     }
-}
+} // Конец listenToBets
+
+
+
 app.get('/api/bets', async (req, res) => {
     const roundQuery = req.query.round; // Получаем номер раунда из запроса (?round=...)
     console.log(`[API] Запрос ставок для раунда: ${roundQuery}`);
@@ -344,6 +467,144 @@ app.get('/api/bets', async (req, res) => {
         res.status(500).json({ error: 'Внутренняя ошибка сервера при получении ставок' });
     }
 });
+
+app.get('/api/payout-proof', async (req, res) => {
+    const { round, player } = req.query;
+
+    if (!round || !player || isNaN(parseInt(round))) {
+        return res.status(400).json({ error: 'Missing or invalid parameters: round (number) and player (address) are required.' });
+    }
+
+    const roundNum = parseInt(round);
+    const playerAddress = player;
+
+    console.log(`[API Proof] Request for player ${playerAddress} in round ${roundNum}`);
+
+    try {
+        // 1. Найти данные о раунде в БД
+        const roundData = await RoundPayoutModel.findOne({ round: roundNum }).lean(); // Используем lean для производительности
+
+        if (!roundData) {
+            console.log(`[API Proof] Round ${roundNum} data not found in DB.`);
+            return res.status(404).json({ error: `Payout data for round ${roundNum} not found.` });
+        }
+
+        // 2. Найти конкретную выплату для игрока
+        const playerPayout = roundData.payouts.find(p => p.address === playerAddress);
+
+        if (!playerPayout) {
+            console.log(`[API Proof] No payout found for player ${playerAddress} in round ${roundNum}.`);
+            return res.status(404).json({ error: `No winning payout found for player ${playerAddress} in round ${roundNum}.` });
+        }
+
+        // 3. Восстановить дерево и сгенерировать proof
+        console.log(`[API Proof] Found payout for ${playerAddress}: ${playerPayout.amount}. Generating proof...`);
+
+        // Воссоздаем листья из сохраненных данных
+        const leaves = roundData.payouts.map(p => {
+            const addressBuffer = new PublicKey(p.address).toBuffer();
+            const amountBuffer = new BN(p.amount).toArrayLike(Buffer, 'le', 8); // Восстанавливаем BN из строки
+            const packedData = Buffer.concat([addressBuffer, amountBuffer]);
+            return keccak256(packedData);
+        });
+
+        // Создаем дерево (с теми же опциями!)
+        const tree = new MerkleTree(leaves, keccak256, { sortPairs: true });
+
+        // Создаем лист для запрашиваемого игрока
+        const leafToProve = keccak256(Buffer.concat([
+            new PublicKey(playerPayout.address).toBuffer(),
+            new BN(playerPayout.amount).toArrayLike(Buffer, 'le', 8)
+        ]));
+
+        // Генерируем proof
+        const proof = tree.getHexProof(leafToProve).map(p => p.slice(2)); // Убираем '0x' из каждого элемента proof
+
+        // Проверяем корень (на всякий случай)
+        const calculatedRoot = tree.getHexRoot();
+        if (calculatedRoot !== roundData.payoutRootHex) {
+            console.error(`[API Proof] FATAL: Calculated Merkle root ${calculatedRoot} does not match stored root ${roundData.payoutRootHex} for round ${roundNum}!`);
+            return res.status(500).json({ error: 'Internal server error: Merkle root mismatch.' });
+        }
+
+        console.log(`[API Proof] Proof generated successfully for ${playerAddress} in round ${roundNum}.`);
+
+        // 4. Отправить ответ
+        res.json({
+            round: roundNum,
+            player: playerAddress,
+            amount: playerPayout.amount, // Сумма выплаты (строка)
+            proof: proof // Массив хэшей (строки без '0x')
+        });
+
+    } catch (error) {
+        console.error(`[API Proof] Error generating proof for player ${playerAddress} round ${roundNum}:`, error);
+        res.status(500).json({ error: 'Internal server error while generating proof.' });
+    }
+});
+
+function calculatePayoutMultiplier(betType) {
+    switch (betType) {
+        case BET_TYPE_STRAIGHT: return new BN(36);
+        case BET_TYPE_SPLIT: return new BN(18);
+        case BET_TYPE_CORNER: return new BN(9);
+        case BET_TYPE_STREET: return new BN(12);
+        case BET_TYPE_SIX_LINE: return new BN(6);
+        case BET_TYPE_FIRST_FOUR: return new BN(9); // Уточни множитель в контракте, если нужно
+        case BET_TYPE_RED: return new BN(2);
+        case BET_TYPE_BLACK: return new BN(2);
+        case BET_TYPE_EVEN: return new BN(2);
+        case BET_TYPE_ODD: return new BN(2);
+        case BET_TYPE_MANQUE: return new BN(2);
+        case BET_TYPE_PASSE: return new BN(2);
+        case BET_TYPE_COLUMN: return new BN(3);
+        case BET_TYPE_P12: return new BN(3);
+        case BET_TYPE_M12: return new BN(3);
+        case BET_TYPE_D12: return new BN(3);
+        default: return new BN(0);
+    }
+}
+
+function isBetWinner(betType, numbers, winningNumber) {
+    winningNumber = Number(winningNumber); // Убедимся, что это число
+    numbers = numbers.map(n => Number(n)); // И числа в массиве тоже
+
+    switch (betType) {
+        case BET_TYPE_STRAIGHT: return numbers[0] === winningNumber;
+        case BET_TYPE_SPLIT: return numbers[0] === winningNumber || numbers[1] === winningNumber;
+        case BET_TYPE_CORNER:
+            const topLeft = numbers[0];
+            // Проверка на валидность угла (не выходит за границы)
+            if (topLeft % 3 === 0 || topLeft > 34 || topLeft === 0) return false; // Угол не может начинаться с правого края или последних рядов
+            const cornerNumbers = [topLeft, topLeft + 1, topLeft + 3, topLeft + 4];
+            return cornerNumbers.includes(winningNumber);
+        case BET_TYPE_STREET:
+            // Номер улицы (1-12). Число в numbers[0] должно быть первым числом улицы (1, 4, 7...)
+            const startStreet = numbers[0];
+            if ((startStreet - 1) % 3 !== 0 || startStreet > 34 || startStreet < 1) return false;
+            return winningNumber >= startStreet && winningNumber < startStreet + 3 && winningNumber !== 0;
+        case BET_TYPE_SIX_LINE:
+            // Номер линии (1-11). Число в numbers[0] должно быть первым числом линии (1, 4, 7...)
+            const startSixLine = numbers[0];
+            if ((startSixLine - 1) % 3 !== 0 || startSixLine > 31 || startSixLine < 1) return false;
+            return winningNumber >= startSixLine && winningNumber < startSixLine + 6 && winningNumber !== 0;
+        case BET_TYPE_FIRST_FOUR: return [0, 1, 2, 3].includes(winningNumber);
+        case BET_TYPE_RED: return RED_NUMBERS.has(winningNumber);
+        case BET_TYPE_BLACK: return winningNumber !== 0 && !RED_NUMBERS.has(winningNumber);
+        case BET_TYPE_EVEN: return winningNumber !== 0 && winningNumber % 2 === 0;
+        case BET_TYPE_ODD: return winningNumber !== 0 && winningNumber % 2 === 1;
+        case BET_TYPE_MANQUE: return winningNumber >= 1 && winningNumber <= 18;
+        case BET_TYPE_PASSE: return winningNumber >= 19 && winningNumber <= 36;
+        case BET_TYPE_COLUMN:
+            const column = numbers[0]; // Номер колонки (1, 2 или 3)
+            if (column < 1 || column > 3) return false;
+            return winningNumber !== 0 && winningNumber % 3 === (column % 3);
+        case BET_TYPE_P12: return winningNumber >= 1 && winningNumber <= 12;
+        case BET_TYPE_M12: return winningNumber >= 13 && winningNumber <= 24;
+        case BET_TYPE_D12: return winningNumber >= 25 && winningNumber <= 36;
+        default: return false;
+    }
+}
 
 // --- Вспомогательная функция маппинга (нужна здесь тоже!) ---
 function mapBetTypeEnumToString(enumValue) {
