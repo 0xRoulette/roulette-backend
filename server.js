@@ -215,7 +215,14 @@ async function listenToBets() {
                             });
                             return savedBet;
                         } catch (dbError) {
-                            console.error(`[ManualDecode] Error saving bet detail (Type: ${betDataToSave.betType}) to DB for signature ${signature}:`, dbError);
+                            // <<< НАЧАЛО ИЗМЕНЕНИЯ: Улучшенное логирование ошибок БД >>>
+                            console.error(`[ManualDecode] Error saving bet detail (Type: ${betDataToSave.betType}) to DB for signature ${signature}:`, {
+                                message: dbError.message,
+                                code: dbError.code, // Логируем код ошибки MongoDB (например, 11000 для дубликата)
+                                name: dbError.name,
+                                fullError: dbError // Логируем весь объект ошибки для детального анализа
+                            });
+                            // <<< КОНЕЦ ИЗМЕНЕНИЯ >>>
                             skippedCount++; // Увеличиваем счетчик пропущенных/ошибочных
                             return null;
                         }
