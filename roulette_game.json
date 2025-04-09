@@ -467,6 +467,7 @@
             "Initialized if needed (though current logic uses init_if_needed commented out - relies on pre-creation or handles in logic).",
             "Seeds: [b\"player_bets\", game_session_key, player_key]"
           ],
+          "writable": true,
           "pda": {
             "seeds": [
               {
