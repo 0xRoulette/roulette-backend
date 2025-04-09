@@ -82,7 +82,6 @@ server.listen(PORT, () => {
 
 // --- Логика для Solana ---
 const { Connection, PublicKey } = require('@solana/web3.js');
-const BetModel = require('./models/Bet');
 
 // --- Константы Solana ---
 const PROGRAM_ID = new PublicKey('8KKpjq7wh5fqrAr1dr65WCMCW1h7oaFWWvwbJJhawVwX');
