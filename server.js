@@ -82,7 +82,6 @@ server.listen(PORT, () => {
 
 // --- Логика для Solana ---
 const { Connection, PublicKey } = require('@solana/web3.js');
-const anchor = require('@coral-xyz/anchor');
 const BetModel = require('./models/Bet');
 
 // --- Константы Solana ---
