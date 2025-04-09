@@ -3,38 +3,37 @@ const http = require('http');
 const { Server } = require("socket.io");
 const mongoose = require('mongoose');
 const fs = require('fs')
-const cors = require('cors'); // <<< Добавляем эту строку
-const BN = require('bn.js'); // <<< Убедись, что BN импортирован (нужен для сумм)
+const cors = require('cors');
+const BN = require('bn.js');
 const anchor = require('@coral-xyz/anchor');
-const BetModel = require('./models/Bet');
-const RoundPayoutModel = require('./models/RoundPayout'); // <<< Импортируем новую модель
+const { Connection, PublicKey } = require('@solana/web3.js'); // Solana web3 до использования
 const { MerkleTree } = require('merkletreejs');
 const keccak256 = require('keccak256');
 
+// --- Конфигурация ---
+const { QUICKNODE_RPC, MONGO_URI, QUICKNODE_WSS } = require('./config');
+
+// --- Инициализация Solana ---
+const PROGRAM_ID = new PublicKey('8KKpjq7wh5fqrAr1dr65WCMCW1h7oaFWWvwbJJhawVwX');
+const idl = require('./roulette_game.json');
+const connection = new Connection(QUICKNODE_RPC, {
+    wsEndpoint: QUICKNODE_WSS,
+    commitment: 'confirmed'
+});
+const walletPath = './id.json';
+const secretKey = JSON.parse(fs.readFileSync(walletPath, 'utf-8'));
+const ownerKeypair = anchor.web3.Keypair.fromSecretKey(Uint8Array.from(secretKey));
+const ownerWallet = new anchor.Wallet(ownerKeypair);
+const provider = new anchor.AnchorProvider(connection, ownerWallet, { commitment: 'confirmed' });
+
+// --- Инициализация Anchor Program (теперь все переменные объявлены) ---
 const program = new anchor.Program(idl, PROGRAM_ID, provider);
 
+// --- Модели Базы Данных ---
+const BetModel = require('./models/Bet');
+const RoundPayoutModel = require('./models/RoundPayout');
 
-
-const app = express();
-app.use(cors({
-    origin: '*',
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], // Разрешенные методы
-    allowedHeaders: ['Content-Type', 'Authorization'] // Разрешенные заголовки
-}));
-const server = http.createServer(app);
-const io = new Server(server, {
-    cors: {
-        origin: "*", // Разрешаем запросы с любого источника (для разработки)
-        methods: ["GET", "POST"]
-    }
-});
-
-const PORT = process.env.PORT || 3001; // Порт для бэкенда
-
-// Подключение к MongoDB (замени 'your_mongodb_connection_string' на твою строку подключения)
-// Пример: 'mongodb://localhost:27017/roulette'
-const { QUICKNODE_RPC, MONGO_URI, QUICKNODE_WSS } = require('./config'); // <<< Добавлено
-
+// --- Другие Константы ---
 const BET_TYPE_STRAIGHT = 0;
 const BET_TYPE_SPLIT = 1;
 const BET_TYPE_CORNER = 2;
@@ -51,8 +50,24 @@ const BET_TYPE_COLUMN = 12; // Исправлено с Columns
 const BET_TYPE_P12 = 13; // 1-12
 const BET_TYPE_M12 = 14; // 13-24
 const BET_TYPE_D12 = 15; // 25-36
-
 const RED_NUMBERS = new Set([1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36]);
+const processingSignatures = new Set(); // Множество для отслеживания обрабатываемых сигнатур
+
+// --- Настройка Express и Socket.IO ---
+const app = express();
+app.use(cors({
+    origin: '*',
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], // Разрешенные методы
+    allowedHeaders: ['Content-Type', 'Authorization'] // Разрешенные заголовки
+}));
+const server = http.createServer(app);
+const io = new Server(server, {
+    cors: {
+        origin: "*", // Разрешаем запросы с любого источника (для разработки)
+        methods: ["GET", "POST"]
+    }
+});
+const PORT = process.env.PORT || 3001;
 
 mongoose.connect(MONGO_URI)
     .then(() => console.log('MongoDB Connected'))
@@ -80,27 +95,6 @@ server.listen(PORT, () => {
     listenToBets();
 });
 
-// --- Логика для Solana ---
-const { Connection, PublicKey } = require('@solana/web3.js');
-
-// --- Константы Solana ---
-const PROGRAM_ID = new PublicKey('8KKpjq7wh5fqrAr1dr65WCMCW1h7oaFWWvwbJJhawVwX');
-const idl = require('./roulette_game.json');
-const connection = new Connection(QUICKNODE_RPC, { // <<< Добавляем объект конфигурации
-    wsEndpoint: QUICKNODE_WSS,                    // <<< Указываем WSS адрес
-    commitment: 'confirmed'                       // <<< Переносим commitment сюда
-});
-
-// Загрузка кошелька из файла
-const walletPath = './id.json'; // <<< Используем относительный путь
-const secretKey = JSON.parse(fs.readFileSync(walletPath, 'utf-8'));
-const ownerKeypair = anchor.web3.Keypair.fromSecretKey(Uint8Array.from(secretKey));
-const ownerWallet = new anchor.Wallet(ownerKeypair); // <<< Создаем объект Wallet
-
-// Используем загруженный кошелек в провайдере
-const provider = new anchor.AnchorProvider(connection, ownerWallet, { commitment: 'confirmed' });
-
-const processingSignatures = new Set(); // Множество для отслеживания обрабатываемых сигнатур const eventParser = new anchor.EventParser(program.programId, new anchor.BorshCoder(program.idl)); // Эту строку можно пока оставить или закомментировать, т.к. addEventListener ее не использует
 
 
 async function listenToBets() {
