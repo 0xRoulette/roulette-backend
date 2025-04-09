@@ -1114,259 +1114,68 @@
   "accounts": [
     {
       "name": "ClaimRecord",
-      "discriminator": [ 57, 229, 0, 9, 65, 62, 96, 7 ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "claimed",
-            "type": "bool"
-          },
-          {
-            "name": "bump",
-            "type": "u8"
-          }
-        ]
-      }
+      "discriminator": [
+        57,
+        229,
+        0,
+        9,
+        65,
+        62,
+        96,
+        7
+      ]
     },
     {
       "name": "GameSession",
-      "discriminator": [ 150, 116, 20, 197, 205, 121, 220, 240 ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "current_round",
-            "type": "u64"
-          },
-          {
-            "name": "round_start_time",
-            "type": "i64"
-          },
-          {
-            "name": "round_status",
-            "type": {
-              "defined": {
-                "name": "RoundStatus"
-              }
-            }
-          },
-          {
-            "name": "winning_number",
-            "type": {
-              "option": "u8"
-            }
-          },
-          {
-            "name": "payout_root",
-            "type": {
-              "option": {
-                "array": [
-                  "u8",
-                  32
-                ]
-              }
-            }
-          },
-          {
-            "name": "starter",
-            "type": {
-              "option": "pubkey"
-            }
-          },
-          {
-            "name": "closer",
-            "type": {
-              "option": "pubkey"
-            }
-          },
-          {
-            "name": "bets_closed_timestamp",
-            "type": "i64"
-          },
-          {
-            "name": "get_random_timestamp",
-            "type": "i64"
-          },
-          {
-            "name": "bets_count",
-            "type": "u64"
-          },
-          {
-            "name": "total_bet_amount",
-            "type": "u64"
-          },
-          {
-            "name": "vaults",
-            "type": {
-              "vec": "pubkey"
-            }
-          },
-          {
-            "name": "reward_token_mint",
-            "type": "pubkey"
-          },
-          {
-            "name": "bump",
-            "type": "u8"
-          },
-          {
-            "name": "round_bets",
-            "type": {
-              "vec": {
-                "defined": {
-                  "name": "RoundBetEntry"
-                }
-              }
-            }
-          }
-        ]
-      }
+      "discriminator": [
+        150,
+        116,
+        20,
+        197,
+        205,
+        121,
+        220,
+        240
+      ]
     },
     {
       "name": "PlayerBets",
-      "discriminator": [ 244, 3, 166, 99, 111, 132, 107, 192 ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "player",
-            "type": "pubkey"
-          },
-          {
-            "name": "round",
-            "type": "u64"
-          },
-          {
-            "name": "vault",
-            "type": "pubkey"
-          },
-          {
-            "name": "token_mint",
-            "type": "pubkey"
-          },
-          {
-            "name": "bets",
-            "type": {
-              "vec": {
-                "defined": {
-                  "name": "Bet"
-                }
-              }
-            }
-          },
-          {
-            "name": "bump",
-            "type": "u8"
-          }
-        ]
-      }
+      "discriminator": [
+        244,
+        3,
+        166,
+        99,
+        111,
+        132,
+        107,
+        192
+      ]
     },
     {
       "name": "RoundPayoutInfo",
-      "discriminator": [ 89, 71, 183, 133, 247, 229, 162, 134 ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "round",
-            "docs": [
-              "The round number this payout information pertains to."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "payout_root",
-            "docs": [
-              "The Merkle root calculated from all winning payouts for this round."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "submitted_by",
-            "docs": [
-              "The public key of the authority (backend) that submitted this root."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "timestamp",
-            "docs": [
-              "Unix timestamp when the root was submitted."
-            ],
-            "type": "i64"
-          },
-          {
-            "name": "bump",
-            "docs": [
-              "Bump seed for the PDA."
-            ],
-            "type": "u8"
-          }
-        ]
-      }
+      "discriminator": [
+        89,
+        71,
+        183,
+        133,
+        247,
+        229,
+        162,
+        134
+      ]
     },
     {
       "name": "VaultAccount",
-      "discriminator": [ 230, 251, 241, 83, 139, 202, 93, 28 ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "authority",
-            "type": "pubkey"
-          },
-          {
-            "name": "token_mint",
-            "type": "pubkey"
-          },
-          {
-            "name": "token_account",
-            "type": "pubkey"
-          },
-          {
-            "name": "total_liquidity",
-            "type": "u64"
-          },
-          {
-            "name": "bump",
-            "type": "u8"
-          },
-          {
-            "name": "liquidity_pool",
-            "type": {
-              "vec": {
-                "defined": {
-                  "name": "LiquidityProvision"
-                }
-              }
-            }
-          },
-          {
-            "name": "total_turnover",
-            "type": "u64"
-          },
-          {
-            "name": "provider_rewards",
-            "type": {
-              "vec": {
-                "defined": {
-                  "name": "ProviderReward"
-                }
-              }
-            }
-          },
-          {
-            "name": "owner_reward",
-            "type": "u64"
-          }
-        ]
-      }
+      "discriminator": [
+        230,
+        251,
+        241,
+        83,
+        139,
+        202,
+        93,
+        28
+      ]
     }
   ],
   "events": [
