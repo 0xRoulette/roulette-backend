@@ -26,7 +26,7 @@ const ownerWallet = new anchor.Wallet(ownerKeypair);
 const provider = new anchor.AnchorProvider(connection, ownerWallet, { commitment: 'confirmed' });
 
 // --- Anchor Program Initialization ---
-const program = new anchor.Program(idl, PROGRAM_ID, provider);
+// const program = new anchor.Program(idl, PROGRAM_ID, provider); // <--- ЗАКОММЕНТИРУЕМ ЭТУ СТРОКУ
 
 // --- Database Models ---
 const BetModel = require('./models/Bet');
