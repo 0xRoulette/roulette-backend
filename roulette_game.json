@@ -1,5 +1,5 @@
 {
-  "address": "5c7NSFehUoWQXtXSzMMC9RmiZ1YTpPt5ubXLC5Xd52JX",
+  "address": "9ZgFwUaAu1DHYMWpyKFguqmHi5Hb8BAyzdcvb1q7frtN",
   "metadata": {
     "name": "roulette_game",
     "version": "0.1.3",
@@ -8,164 +8,7 @@
   },
   "instructions": [
     {
-      "name": "claim_winnings_with_proof",
-      "discriminator": [
-        73,
-        175,
-        95,
-        230,
-        37,
-        8,
-        108,
-        63
-      ],
-      "accounts": [
-        {
-          "name": "player",
-          "docs": [
-            "The player claiming the winnings (signer). Pays for `claim_record` creation."
-          ],
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "vault",
-          "docs": [
-            "The vault corresponding to the token mint of the winnings being claimed. Mutable to update liquidity."
-          ],
-          "writable": true
-        },
-        {
-          "name": "vault_token_account",
-          "docs": [
-            "The vault's SPL token account, holding the liquidity from which winnings are paid."
-          ],
-          "writable": true
-        },
-        {
-          "name": "player_token_account",
-          "docs": [
-            "The player's SPL token account where the winnings will be deposited."
-          ],
-          "writable": true
-        },
-        {
-          "name": "round_payout_info",
-          "docs": [
-            "The account storing the Merkle root for the specified `round`.",
-            "Seeds: [b\"payout_info\", round_number]"
-          ],
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  112,
-                  97,
-                  121,
-                  111,
-                  117,
-                  116,
-                  95,
-                  105,
-                  110,
-                  102,
-                  111
-                ]
-              },
-              {
-                "kind": "arg",
-                "path": "round"
-              }
-            ]
-          }
-        },
-        {
-          "name": "claim_record",
-          "docs": [
-            "A record created to prevent double-claiming for a specific player and round.",
-            "Seeds: [b\"claim_record\", round_number, player_key]"
-          ],
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  99,
-                  108,
-                  97,
-                  105,
-                  109,
-                  95,
-                  114,
-                  101,
-                  99,
-                  111,
-                  114,
-                  100
-                ]
-              },
-              {
-                "kind": "arg",
-                "path": "round"
-              },
-              {
-                "kind": "account",
-                "path": "player"
-              }
-            ]
-          }
-        },
-        {
-          "name": "token_program",
-          "docs": [
-            "The SPL Token Program, needed for the token transfer CPI."
-          ],
-          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
-        },
-        {
-          "name": "system_program",
-          "docs": [
-            "The Solana System Program, needed for creating `claim_record`."
-          ],
-          "address": "11111111111111111111111111111111"
-        },
-        {
-          "name": "rent",
-          "docs": [
-            "The Rent Sysvar, needed for `claim_record` initialization."
-          ],
-          "address": "SysvarRent111111111111111111111111111111111"
-        }
-      ],
-      "args": [
-        {
-          "name": "round",
-          "type": "u64"
-        },
-        {
-          "name": "amount",
-          "type": "u64"
-        },
-        {
-          "name": "proof",
-          "type": {
-            "vec": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          }
-        }
-      ]
-    },
-    {
       "name": "close_bets",
-      "docs": [
-        "Closes the betting phase for the current round."
-      ],
       "discriminator": [
         82,
         76,
@@ -215,9 +58,6 @@
         },
         {
           "name": "system_program",
-          "docs": [
-            "The Solana System Program."
-          ],
           "address": "11111111111111111111111111111111"
         }
       ],
@@ -225,10 +65,6 @@
     },
     {
       "name": "get_random",
-      "docs": [
-        "Generates the winning number for the current round using slot hashes,",
-        "salted with the last bettor's public key and current timestamp."
-      ],
       "discriminator": [
         96,
         196,
@@ -659,7 +495,7 @@
         {
           "name": "player_bets",
           "docs": [
-            "The account storing the player's bets for the current round. MUST exist.",
+            "The account storing the player's bets for the current round. MUST exist (initialized via `initialize_player_bets`).",
             "Seeds: [b\"player_bets\", game_session_key, player_key]"
           ],
           "writable": true,
@@ -713,10 +549,6 @@
     },
     {
       "name": "provide_liquidity",
-      "docs": [
-        "Allows a user (`liquidity_provider`) to deposit SPL tokens into a specific `VaultAccount`,",
-        "increasing the vault's liquidity and recording the contribution."
-      ],
       "discriminator": [
         40,
         110,
@@ -834,118 +666,6 @@
         }
       ],
       "args": []
-    },
-    {
-      "name": "submit_payout_root",
-      "discriminator": [
-        64,
-        163,
-        240,
-        96,
-        71,
-        108,
-        123,
-        95
-      ],
-      "accounts": [
-        {
-          "name": "authority",
-          "docs": [
-            "The authorized backend authority (signer). Pays for `round_payout_info` creation."
-          ],
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "game_session",
-          "docs": [
-            "The global `GameSession` account, used to verify the round status."
-          ],
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  103,
-                  97,
-                  109,
-                  101,
-                  95,
-                  115,
-                  101,
-                  115,
-                  115,
-                  105,
-                  111,
-                  110
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "round_payout_info",
-          "docs": [
-            "The `RoundPayoutInfo` account to be initialized for this `round`.",
-            "Ensures the root is submitted only once per round.",
-            "Seeds: [b\"payout_info\", round_number]"
-          ],
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  112,
-                  97,
-                  121,
-                  111,
-                  117,
-                  116,
-                  95,
-                  105,
-                  110,
-                  102,
-                  111
-                ]
-              },
-              {
-                "kind": "arg",
-                "path": "round"
-              }
-            ]
-          }
-        },
-        {
-          "name": "system_program",
-          "docs": [
-            "The Solana System Program, needed for account creation."
-          ],
-          "address": "11111111111111111111111111111111"
-        },
-        {
-          "name": "rent",
-          "docs": [
-            "The Rent Sysvar, needed for `init`."
-          ],
-          "address": "SysvarRent111111111111111111111111111111111"
-        }
-      ],
-      "args": [
-        {
-          "name": "round",
-          "type": "u64"
-        },
-        {
-          "name": "root",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        }
-      ]
     },
     {
       "name": "withdraw_liquidity",
@@ -1132,19 +852,6 @@
   ],
   "accounts": [
     {
-      "name": "ClaimRecord",
-      "discriminator": [
-        57,
-        229,
-        0,
-        9,
-        65,
-        62,
-        96,
-        7
-      ]
-    },
-    {
       "name": "GameSession",
       "discriminator": [
         150,
@@ -1168,19 +875,6 @@
         132,
         107,
         192
-      ]
-    },
-    {
-      "name": "RoundPayoutInfo",
-      "discriminator": [
-        89,
-        71,
-        183,
-        133,
-        247,
-        229,
-        162,
-        134
       ]
     },
     {
@@ -1251,32 +945,6 @@
       ]
     },
     {
-      "name": "PayoutClaimed",
-      "discriminator": [
-        200,
-        39,
-        105,
-        112,
-        116,
-        63,
-        58,
-        149
-      ]
-    },
-    {
-      "name": "PayoutRootSubmitted",
-      "discriminator": [
-        31,
-        150,
-        171,
-        193,
-        251,
-        176,
-        189,
-        33
-      ]
-    },
-    {
       "name": "RandomGenerated",
       "discriminator": [
         15,
@@ -1301,6 +969,19 @@
         170,
         120
       ]
+    },
+    {
+      "name": "WinningsClaimed",
+      "discriminator": [
+        187,
+        184,
+        29,
+        196,
+        54,
+        117,
+        70,
+        150
+      ]
     }
   ],
   "errors": [
@@ -1312,7 +993,7 @@
     {
       "code": 6001,
       "name": "InvalidNumberOfBets",
-      "msg": "Number of bets in a single transaction must be between 1 and MAX_BETS_PER_TX."
+      "msg": "Maximum number of bets per round per player reached."
     },
     {
       "code": 6002,
@@ -1332,7 +1013,7 @@
     {
       "code": 6005,
       "name": "NoReward",
-      "msg": "No reward available for withdrawal."
+      "msg": "No reward available for withdrawal (for LPs or owner)."
     },
     {
       "code": 6006,
@@ -1372,7 +1053,7 @@
     {
       "code": 6013,
       "name": "NoBetsInRound",
-      "msg": "Player has no bets recorded for this round (used internally?)."
+      "msg": "Player has no bets recorded for this round."
     },
     {
       "code": 6014,
@@ -1387,7 +1068,7 @@
     {
       "code": 6016,
       "name": "VaultMismatch",
-      "msg": "The vault specified in the bet does not match the vault associated with the PlayerBets account for this round."
+      "msg": "The vault specified does not match the vault associated with the PlayerBets account or expected PDA."
     },
     {
       "code": 6017,
@@ -1406,58 +1087,38 @@
     },
     {
       "code": 6020,
-      "name": "InvalidRoundForPayoutRoot",
-      "msg": "Invalid round number specified for submitting the payout root."
-    },
-    {
-      "code": 6021,
-      "name": "RoundNotCompletedForPayout",
-      "msg": "The specified round is not yet completed, cannot submit payout root."
-    },
-    {
-      "code": 6022,
-      "name": "MerkleProofInvalid",
-      "msg": "Merkle proof verification failed."
-    },
-    {
-      "code": 6023,
-      "name": "PayoutRootNotSubmitted",
-      "msg": "Payout root has not been submitted for the specified round."
-    },
-    {
-      "code": 6024,
-      "name": "PayoutAlreadyClaimed",
-      "msg": "Payout for this player and round has already been claimed."
-    },
-    {
-      "code": 6025,
       "name": "AlreadyInitialized",
       "msg": "Game session account is already initialized."
     },
     {
-      "code": 6026,
-      "name": "InvalidResizeOrder",
-      "msg": "Attempted final resize before intermediate resize was done."
-    },
-    {
-      "code": 6027,
+      "code": 6021,
       "name": "NoBetsPlacedInRound",
       "msg": "Cannot generate random number because no bets were placed in this round."
     },
     {
-      "code": 6028,
+      "code": 6022,
       "name": "InvalidTokenAccountOwner",
       "msg": "The vault's token account is not owned by the vault PDA."
     },
     {
-      "code": 6029,
+      "code": 6023,
       "name": "VaultPDAMismatch",
       "msg": "Derived vault PDA does not match the provided account."
     },
     {
-      "code": 6030,
+      "code": 6024,
       "name": "InvalidTokenAccount",
       "msg": "Invalid SPL token account provided (e.g., wrong mint, owner, or not initialized)."
+    },
+    {
+      "code": 6025,
+      "name": "ClaimRoundMismatchOrNotCompleted",
+      "msg": "Attempting to claim winnings for a round that is not completed or does not match PlayerBets round."
+    },
+    {
+      "code": 6026,
+      "name": "NoWinningsFound",
+      "msg": "No winnings found for the player in the specified round (claim attempted)."
     }
   ],
   "types": [
@@ -1558,22 +1219,6 @@
       }
     },
     {
-      "name": "ClaimRecord",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "claimed",
-            "type": "bool"
-          },
-          {
-            "name": "bump",
-            "type": "u8"
-          }
-        ]
-      }
-    },
-    {
       "name": "GameSession",
       "type": {
         "kind": "struct",
@@ -1598,17 +1243,6 @@
             "name": "winning_number",
             "type": {
               "option": "u8"
-            }
-          },
-          {
-            "name": "payout_root",
-            "type": {
-              "option": {
-                "array": [
-                  "u8",
-                  32
-                ]
-              }
             }
           },
           {
@@ -1720,63 +1354,6 @@
       }
     },
     {
-      "name": "PayoutClaimed",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "round",
-            "type": "u64"
-          },
-          {
-            "name": "player",
-            "type": "pubkey"
-          },
-          {
-            "name": "token_mint",
-            "type": "pubkey"
-          },
-          {
-            "name": "amount",
-            "type": "u64"
-          },
-          {
-            "name": "timestamp",
-            "type": "i64"
-          }
-        ]
-      }
-    },
-    {
-      "name": "PayoutRootSubmitted",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "round",
-            "type": "u64"
-          },
-          {
-            "name": "root",
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "authority",
-            "type": "pubkey"
-          },
-          {
-            "name": "timestamp",
-            "type": "i64"
-          }
-        ]
-      }
-    },
-    {
       "name": "PlayerBets",
       "type": {
         "kind": "struct",
@@ -1863,58 +1440,10 @@
           {
             "name": "slot",
             "type": "u64"
-          }
-        ]
-      }
-    },
-    {
-      "name": "RoundPayoutInfo",
-      "docs": [
-        "Stores the Merkle root for payouts of a specific completed round.",
-        "Initialized once per round by the `submit_payout_root` instruction."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "round",
-            "docs": [
-              "The round number this payout information pertains to."
-            ],
-            "type": "u64"
           },
           {
-            "name": "payout_root",
-            "docs": [
-              "The Merkle root calculated from all winning payouts for this round."
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "submitted_by",
-            "docs": [
-              "The public key of the authority (backend) that submitted this root."
-            ],
+            "name": "last_bettor",
             "type": "pubkey"
-          },
-          {
-            "name": "timestamp",
-            "docs": [
-              "Unix timestamp when the root was submitted."
-            ],
-            "type": "i64"
-          },
-          {
-            "name": "bump",
-            "docs": [
-              "Bump seed for the PDA."
-            ],
-            "type": "u8"
           }
         ]
       }
@@ -2010,6 +1539,34 @@
           {
             "name": "owner_reward",
             "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "WinningsClaimed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "round",
+            "type": "u64"
+          },
+          {
+            "name": "player",
+            "type": "pubkey"
+          },
+          {
+            "name": "token_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
           }
         ]
       }
