@@ -14,7 +14,7 @@ const keccak256 = require('keccak256');
 const { QUICKNODE_RPC, MONGO_URI, QUICKNODE_WSS } = require('./config');
 
 // --- Инициализация Solana ---
-const PROGRAM_ID = new PublicKey('8KKpjq7wh5fqrAr1dr65WCMCW1h7oaFWWvwbJJhawVwX');
+const PROGRAM_ID = new PublicKey('5c7NSFehUoWQXtXSzMMC9RmiZ1YTpPt5ubXLC5Xd52JX');
 const idl = require('./roulette_game.json');
 const connection = new Connection(QUICKNODE_RPC, {
     wsEndpoint: QUICKNODE_WSS,
