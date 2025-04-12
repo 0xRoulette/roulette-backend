@@ -121,17 +121,23 @@ async function listenToEvents() {
         const subscriptionId = connection.onLogs(
             PROGRAM_ID,
             async (logsResult, context) => { // <<< НАЧАЛО КОЛЛБЭКА
-                console.log(`[onLogs Raw] Received logs for sig: ${signature}, err: ${err}, log count: ${logs?.length}`); // <<< ДОБАВЬ
-                if (logs) {
-                    logs.forEach((log, index) => console.log(`[onLogs Raw Log ${index}] ${log.substring(0, 150)}...`)); // <<< ДОБАВЬ (лог начала каждой строки)
-                }
-                const { signature, err, logs } = logsResult;
-                const { slot } = context;
+                // <<< УДАЛИ ЭТИ ДВЕ СТРОКИ (124 и 125) >>>
+                // console.log(`[onLogs Raw] Received logs for sig: ${signature}, err: ${err}, log count: ${logs?.length}`); // <<< УДАЛИТЬ
+                // if (logs) { // <<< УДАЛИТЬ
+                //     logs.forEach((log, index) => console.log(`[onLogs Raw Log ${index}] ${log.substring(0, 150)}...`)); // <<< УДАЛИТЬ
+                // } // <<< УДАЛИТЬ
 
+                // <<< ПОПЫТКА ДЕСТРУКТУРИЗАЦИИ >>>
+                const { signature, err, logs } = logsResult; // Переменные объявлены здесь
+                const { slot } = context;
+                // <<< КОНЕЦ ПОПЫТКИ >>>
+
+                // <<< ОСТАВЬ ЭТИ ЛОГИ (Они уже в правильном месте) >>>
                 console.log(`[onLogs Raw] Received logs for sig: ${signature}, err: ${err}, log count: ${logs?.length}`);
                 if (logs) {
                     logs.forEach((log, index) => console.log(`[onLogs Raw Log ${index}] ${log.substring(0, 150)}...`));
                 }
+                // <<< КОНЕЦ ПРАВИЛЬНЫХ ЛОГОВ >>>
 
 
                 if (err) {
