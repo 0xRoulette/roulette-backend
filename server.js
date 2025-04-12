@@ -97,7 +97,21 @@ server.listen(PORT, () => {
 // Main function to listen for program logs and process events
 async function listenToEvents() {
     console.log(`Listening for Logs from program ${PROGRAM_ID.toString()}...`);
+
+    let idl; // Объявляем заранее
     const borshCoder = new anchor.BorshCoder(idl);
+
+    try {
+        console.log("[Debug] Attempting to require IDL './roulette_game.json'...");
+        idl = require('./roulette_game.json'); // Загружаем IDL
+        console.log("[Debug] IDL required successfully. Attempting to create BorshCoder...");
+        borshCoder = new anchor.BorshCoder(idl); // Создаем Coder
+        console.log("[Debug] BorshCoder created successfully.");
+    } catch (error) {
+        console.error("[FATAL] Failed to load IDL or create BorshCoder:", error);
+        // Если здесь ошибка, дальнейшее выполнение бессмысленно
+        return; // Прерываем выполнение listenToEvents
+    }
 
     try {
         console.log(`[Debug] Attempting to subscribe to logs for program ${PROGRAM_ID.toString()}...`);
