@@ -98,26 +98,29 @@ server.listen(PORT, () => {
 async function listenToEvents() {
     console.log(`Listening for Logs from program ${PROGRAM_ID.toString()}...`);
 
-    let idl; // Объявляем заранее
-    const borshCoder = new anchor.BorshCoder(idl);
+    let idl;
+    let borshCoder; // Объявляем здесь
 
+    // <<< НАЧАЛО: Правильный блок для загрузки IDL и создания Coder >>>
     try {
         console.log("[Debug] Attempting to require IDL './roulette_game.json'...");
-        idl = require('./roulette_game.json'); // Загружаем IDL
+        idl = require('./roulette_game.json'); // Сначала ЗАГРУЖАЕМ IDL
         console.log("[Debug] IDL required successfully. Attempting to create BorshCoder...");
-        borshCoder = new anchor.BorshCoder(idl); // Создаем Coder
+        // <<< ИСПРАВЛЕНИЕ: Создаем borshCoder ПОСЛЕ загрузки idl >>>
+        borshCoder = new anchor.BorshCoder(idl);
         console.log("[Debug] BorshCoder created successfully.");
     } catch (error) {
         console.error("[FATAL] Failed to load IDL or create BorshCoder:", error);
-        // Если здесь ошибка, дальнейшее выполнение бессмысленно
-        return; // Прерываем выполнение listenToEvents
+        return; // Выходим, если ошибка
     }
+    // <<< КОНЕЦ: Правильный блок >>>
 
+    // Теперь можно безопасно использовать borshCoder дальше
     try {
         console.log(`[Debug] Attempting to subscribe to logs for program ${PROGRAM_ID.toString()}...`);
         const subscriptionId = connection.onLogs(
             PROGRAM_ID,
-            async (logsResult, context) => {
+            async (logsResult, context) => { // <<< НАЧАЛО КОЛЛБЭКА
                 console.log(`[onLogs Raw] Received logs for sig: ${signature}, err: ${err}, log count: ${logs?.length}`); // <<< ДОБАВЬ
                 if (logs) {
                     logs.forEach((log, index) => console.log(`[onLogs Raw Log ${index}] ${log.substring(0, 150)}...`)); // <<< ДОБАВЬ (лог начала каждой строки)
