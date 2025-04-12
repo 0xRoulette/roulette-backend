@@ -269,7 +269,7 @@ async function listenToEvents() {
                                         }
                                         console.log(`[RandomGenerated] Calculated payouts for ${playerPayouts.size} winners.`);
                                     } else {
-                                        console.log(`[RandomGenerated] No bets found for round ${roundNum} in session ${expectedGameSessionPubkey}. No payouts calculated.`);
+                                        console.log(`[RandomGenerated] No bets found for round ${roundNum}. No payouts calculated.`);
                                     }
                                     // --- КОНЕЦ расчета выигрышей ---
 
@@ -309,7 +309,7 @@ async function listenToEvents() {
                                             console.error(`[RandomGenerated] Error saving RoundPayout data for round ${roundNum}:`, payoutDbError);
                                         }
                                     } else {
-                                        console.log(`[RandomGenerated] No payouts to save for round ${roundNum} session ${expectedGameSessionPubkey}.`);
+                                        console.log(`[RandomGenerated] No payouts to save for round ${roundNum}.`);
                                         // Можно создать запись без выплат, если нужно зафиксировать сам раунд
                                         try {
                                             await RoundPayoutModel.findOneAndUpdate(
@@ -322,7 +322,7 @@ async function listenToEvents() {
                                                 },
                                                 { upsert: true, new: true, setDefaultsOnInsert: true }
                                             );
-                                            console.log(`[RandomGenerated] Saved empty RoundPayout data for round ${roundNum} session ${expectedGameSessionPubkey}.`);
+                                            console.log(`[RandomGenerated] Saved empty RoundPayout data for round ${roundNum}.`);
                                         } catch (payoutDbError) {
                                             console.error(`[RandomGenerated] Error saving empty RoundPayout data for round ${roundNum}:`, payoutDbError);
                                         }
@@ -408,10 +408,10 @@ app.get('/api/bets', async (req, res) => {
         // <<< КОНЕЦ ИЗМЕНЕНИЙ: Добавляем фильтр по gameSessionPubkey >>>
 
         if (!betsFromDb || betsFromDb.length === 0) {
-            console.log(`[API Bets] No bets found for round ${roundNumber} in session ${expectedGameSessionPubkey}.`);
+            console.log(`[API Bets] No bets found for round ${roundNumber}.`);
             return res.json([]);
         }
-        console.log(`[API Bets] Found ${betsFromDb.length} bet records for round ${roundNumber} in session ${expectedGameSessionPubkey}.`);
+        console.log(`[API Bets] Found ${betsFromDb.length} bet records for round ${roundNumber}.`);
 
         // Преобразование данных для ответа остается прежним
         const responseData = betsFromDb.map(bet => ({
@@ -436,7 +436,7 @@ app.get('/api/bets', async (req, res) => {
 
 app.get('/api/round-payouts', async (req, res) => {
     const roundQuery = req.query.round;
-    console.log(`[API Payouts] Request for round: ${roundQuery} in session ${expectedGameSessionPubkey}`);
+    console.log(`[API Payouts] Request for round: ${roundQuery}`);
 
     if (!roundQuery || isNaN(parseInt(roundQuery))) {
         return res.status(400).json({ error: 'Valid round number required' });
@@ -449,7 +449,7 @@ app.get('/api/round-payouts', async (req, res) => {
         }).lean(); // .lean() для получения простого JS объекта
 
         if (!roundPayoutData) {
-            console.log(`[API Payouts] No payout data found for round ${roundNumber} in session ${expectedGameSessionPubkey}.`);
+            console.log(`[API Payouts] No payout data found for round ${roundNumber}.`);
             // Возвращаем 404 или пустой объект/массив, в зависимости от того, как фронтенд будет это обрабатывать
             return res.status(404).json({ error: 'Payout data not found for this round' });
             // Или: return res.json({ winningNumber: null, payouts: [] });
