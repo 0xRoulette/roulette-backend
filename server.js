@@ -30,6 +30,8 @@ const provider = new anchor.AnchorProvider(connection, ownerWallet, { commitment
 
 // --- Database Models ---
 const BetModel = require('./models/Bet');
+const RoundPayoutModel = require('./models/RoundPayout'); // Предполагая, что файл называется RoundPayout.js
+
 
 // --- Other Constants ---
 // Bet type constants (matching the contract)
@@ -323,14 +325,14 @@ async function listenToEvents() {
                                     // --- Сохранение результатов раунда в RoundPayoutModel ---
                                     if (payoutsToSave.length > 0) { // Сохраняем, только если были победители
                                         try {
+                                            // Строка ~325: Убираем gameSessionPubkey из фильтра и обновления
                                             await RoundPayoutModel.findOneAndUpdate(
-                                                { round: roundNum, gameSessionPubkey: expectedGameSessionPubkey },
+                                                { round: roundNum }, // <<< Ищем только по раунду
                                                 {
                                                     round: roundNum,
-                                                    gameSessionPubkey: expectedGameSessionPubkey,
                                                     winningNumber: winningNum,
                                                     payouts: payoutsToSave,
-                                                    // Можно добавить tokenMint: tokenMintForRound, если нужно
+                                                    // gameSessionPubkey: expectedGameSessionPubkey, // <<< УБРАТЬ
                                                 },
                                                 { upsert: true, new: true, setDefaultsOnInsert: true }
                                             );
@@ -342,13 +344,14 @@ async function listenToEvents() {
                                         console.log(`[RandomGenerated] No payouts to save for round ${roundNum}.`);
                                         // Можно создать запись без выплат, если нужно зафиксировать сам раунд
                                         try {
+                                            // Строка ~347: Убираем gameSessionPubkey из фильтра и обновления
                                             await RoundPayoutModel.findOneAndUpdate(
-                                                { round: roundNum, gameSessionPubkey: expectedGameSessionPubkey },
+                                                { round: roundNum }, // <<< Ищем только по раунду
                                                 {
                                                     round: roundNum,
-                                                    gameSessionPubkey: expectedGameSessionPubkey,
                                                     winningNumber: winningNum,
                                                     payouts: [], // Пустой массив выплат
+                                                    // gameSessionPubkey: expectedGameSessionPubkey, // <<< УБРАТЬ
                                                 },
                                                 { upsert: true, new: true, setDefaultsOnInsert: true }
                                             );
