@@ -105,6 +105,10 @@ async function listenToEvents() {
         const subscriptionId = connection.onLogs(
             PROGRAM_ID,
             async (logsResult, context) => {
+                console.log(`[onLogs Raw] Received logs for sig: ${signature}, err: ${err}, log count: ${logs?.length}`); // <<< ДОБАВЬ
+                if (logs) {
+                    logs.forEach((log, index) => console.log(`[onLogs Raw Log ${index}] ${log.substring(0, 150)}...`)); // <<< ДОБАВЬ (лог начала каждой строки)
+                }
                 const { signature, err, logs } = logsResult;
                 const { slot } = context;
 
@@ -133,8 +137,10 @@ async function listenToEvents() {
                         if (log.startsWith(logPrefix)) {
                             try {
                                 const base64Data = log.substring(logPrefix.length);
+                                console.log(`[Decode Attempt] Trying to decode: ${base64Data.substring(0, 50)}...`); // <<< ДОБАВЬ
                                 const eventDataBuffer = anchor.utils.bytes.base64.decode(base64Data);
                                 const event = borshCoder.events.decode(eventDataBuffer);
+                                console.log(`[Decode Result] Decoded event name: ${event?.name}`); // <<< ДОБАВЬ
 
                                 if (!event) continue;
 
