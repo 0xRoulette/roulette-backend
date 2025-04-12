@@ -100,6 +100,7 @@ async function listenToEvents() {
     const borshCoder = new anchor.BorshCoder(idl);
 
     try {
+        console.log(`[Debug] Attempting to subscribe to logs for program ${PROGRAM_ID.toString()}...`);
         const subscriptionId = connection.onLogs(
             PROGRAM_ID,
             async (logsResult, context) => {
@@ -380,7 +381,7 @@ async function listenToEvents() {
             'confirmed' // Используем 'confirmed' или 'finalized' в зависимости от требований
         );
 
-        console.log(`[onLogs] Successfully subscribed to logs. Subscription ID: ${subscriptionId}`);
+        console.log(`[onLogs] Successfully subscribed to logs. Subscription ID: ${subscriptionId}`); // Этот лог мы ищем
 
     } catch (error) {
         console.error("[onLogs] Failed to subscribe to logs:", error);
