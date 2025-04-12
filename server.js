@@ -128,6 +128,12 @@ async function listenToEvents() {
                 const { signature, err, logs } = logsResult;
                 const { slot } = context;
 
+                console.log(`[onLogs Raw] Received logs for sig: ${signature}, err: ${err}, log count: ${logs?.length}`);
+                if (logs) {
+                    logs.forEach((log, index) => console.log(`[onLogs Raw Log ${index}] ${log.substring(0, 150)}...`));
+                }
+
+
                 if (err) {
                     console.error(`[onLogs] Error in logs subscription for signature ${signature}:`, err);
                     return;
