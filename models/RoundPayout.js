@@ -14,13 +14,10 @@ const RoundPayoutSchema = new Schema({
   payouts: [PayoutDetailSchema], // Массив победителей и сумм
   onChainSubmitTx: { type: String, default: null }, // Можно оставить для справки, если нужно
   onChainSubmitError: { type: String, default: null }, // Можно оставить для справки, если нужно
-  gameSessionPubkey: { type: String, required: true, index: true } // Ключ сессии
 }, {
   timestamps: true
 });
 
-// Составной уникальный индекс по сессии и раунду (ОСТАВЛЯЕМ)
-RoundPayoutSchema.index({ gameSessionPubkey: 1, round: 1 }, { unique: true });
 
 const RoundPayoutModel = mongoose.model('RoundPayout', RoundPayoutSchema);
 module.exports = RoundPayoutModel;

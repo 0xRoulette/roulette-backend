@@ -14,7 +14,6 @@ const { QUICKNODE_RPC, MONGO_URI, QUICKNODE_WSS } = require('./config');
 // --- Solana Initialization ---
 // !!! IMPORTANT: Ensure this PROGRAM_ID matches your newly deployed contract !!!
 const PROGRAM_ID = new PublicKey('32T21T93tobSziz7QSojRwsDiWawnr66ys2db8WbBioF');
-const GAME_SESSION_PUBKEY = new PublicKey('GsmMcL7DFXvkBx9gFoQ1FwFYmXBegrN1hM9R4qvU9ade'); // сconst idl = require('./roulette_game.json'); // Ensure this is the latest IDL
 const connection = new Connection(QUICKNODE_RPC, {
     wsEndpoint: QUICKNODE_WSS,
     commitment: 'confirmed'
@@ -99,7 +98,6 @@ server.listen(PORT, () => {
 async function listenToEvents() {
     console.log(`Listening for Logs from program ${PROGRAM_ID.toString()}...`);
     const borshCoder = new anchor.BorshCoder(idl);
-    const expectedGameSessionPubkey = GAME_SESSION_PUBKEY.toBase58(); // Ключ текущей сессии
 
     try {
         const subscriptionId = connection.onLogs(
@@ -158,19 +156,12 @@ async function listenToEvents() {
                                         betNumbers: bet.numbers,
                                         timestamp: new Date(Number(timestamp) * 1000),
                                         signature: signature,
-                                        gameSessionPubkey: expectedGameSessionPubkey // Добавляем ключ сессии
                                     };
 
                                     try {
                                         await BetModel.findOneAndUpdate(
                                             {
                                                 signature: signature,
-                                                player: betDataToSave.player,
-                                                round: betDataToSave.round,
-                                                gameSessionPubkey: betDataToSave.gameSessionPubkey, // Используем в ключе
-                                                betType: betDataToSave.betType,
-                                                'betNumbers': betDataToSave.betNumbers,
-                                                betAmount: betDataToSave.betAmount
                                             },
                                             betDataToSave,
                                             { upsert: true, new: true }
@@ -232,14 +223,12 @@ async function listenToEvents() {
                                     const roundNum = Number(round);
                                     const winningNum = Number(winning_number);
 
-                                    console.log(`[RandomGenerated] Round: ${roundNum}, Winning Number: ${winningNum}`);
+
 
                                     // --- Расчет выигрышей ---
-                                    const betsForRound = await BetModel.find({
-                                        round: roundNum,
-                                        gameSessionPubkey: expectedGameSessionPubkey // <<< Учитываем сессию
-                                    }).lean(); // Используем .lean() для производительности
-                                    console.log(`[RandomGenerated] Found ${betsForRound.length} bet records in DB for round ${roundNum} session ${expectedGameSessionPubkey}.`);
+                                    const betsForRound = await BetModel.find({ round: roundNum }).lean();
+                                    // <<< ИСПРАВЛЕННЫЙ ЛОГ >>>
+                                    console.log(`[RandomGenerated] Found ${betsForRound.length} bet records in DB for round ${roundNum}.`);
                                     const playerPayouts = new Map(); // Map<playerAddress, { totalPayout: BN, tokenMint: string }>
 
                                     if (betsForRound.length > 0) {
@@ -315,7 +304,7 @@ async function listenToEvents() {
                                                 },
                                                 { upsert: true, new: true, setDefaultsOnInsert: true }
                                             );
-                                            console.log(`[RandomGenerated] Saved/Updated RoundPayout data for round ${roundNum} session ${expectedGameSessionPubkey}.`);
+                                            console.log(`[RandomGenerated] Saved/Updated RoundPayout data for round ${roundNum}.`);
                                         } catch (payoutDbError) {
                                             console.error(`[RandomGenerated] Error saving RoundPayout data for round ${roundNum}:`, payoutDbError);
                                         }
@@ -405,7 +394,6 @@ async function listenToEvents() {
 app.get('/api/bets', async (req, res) => {
     const roundQuery = req.query.round;
     console.log(`[API Bets] Request for round: ${roundQuery}`);
-    const expectedGameSessionPubkey = GAME_SESSION_PUBKEY.toBase58(); // <<< Получаем ожидаемый ключ сессии из константы
 
     if (!roundQuery || isNaN(parseInt(roundQuery))) {
         return res.status(400).json({ error: 'Valid round number required' });
@@ -416,7 +404,6 @@ app.get('/api/bets', async (req, res) => {
         // <<< НАЧАЛО ИЗМЕНЕНИЙ: Добавляем фильтр по gameSessionPubkey >>>
         const betsFromDb = await BetModel.find({
             round: roundNumber,
-            gameSessionPubkey: expectedGameSessionPubkey // <<< Фильтруем по ключу сессии из константы
         }).sort({ timestamp: -1 }).lean();
         // <<< КОНЕЦ ИЗМЕНЕНИЙ: Добавляем фильтр по gameSessionPubkey >>>
 
@@ -449,7 +436,6 @@ app.get('/api/bets', async (req, res) => {
 
 app.get('/api/round-payouts', async (req, res) => {
     const roundQuery = req.query.round;
-    const expectedGameSessionPubkey = GAME_SESSION_PUBKEY.toBase58();
     console.log(`[API Payouts] Request for round: ${roundQuery} in session ${expectedGameSessionPubkey}`);
 
     if (!roundQuery || isNaN(parseInt(roundQuery))) {
@@ -460,7 +446,6 @@ app.get('/api/round-payouts', async (req, res) => {
     try {
         const roundPayoutData = await RoundPayoutModel.findOne({
             round: roundNumber,
-            gameSessionPubkey: expectedGameSessionPubkey
         }).lean(); // .lean() для получения простого JS объекта
 
         if (!roundPayoutData) {
