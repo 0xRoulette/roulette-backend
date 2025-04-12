@@ -1,5 +1,5 @@
 {
-  "address": "9ZgFwUaAu1DHYMWpyKFguqmHi5Hb8BAyzdcvb1q7frtN",
+  "address": "32T21T93tobSziz7QSojRwsDiWawnr66ys2db8WbBioF",
   "metadata": {
     "name": "roulette_game",
     "version": "0.1.3",
@@ -59,6 +59,102 @@
         {
           "name": "system_program",
           "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "close_player_bets_account",
+      "docs": [
+        "Closes the player's PlayerBets account for the current game session PDA structure",
+        "and returns the rent exemption SOL back to the player.",
+        "This should only be called when the player is certain they no longer need",
+        "the account (e.g., finished playing or wants to reset)."
+      ],
+      "discriminator": [
+        206,
+        83,
+        98,
+        14,
+        236,
+        142,
+        89,
+        150
+      ],
+      "accounts": [
+        {
+          "name": "player",
+          "docs": [
+            "The player closing their account (signer). Rent SOL will be returned here."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "player_bets",
+          "docs": [
+            "The PlayerBets PDA account to be closed.",
+            "Seeds: [b\"player_bets\", game_session.key().as_ref(), player.key().as_ref()]",
+            "The `close` constraint directs Solana to close the account and send the lamports",
+            "to the specified `player` account."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  108,
+                  97,
+                  121,
+                  101,
+                  114,
+                  95,
+                  98,
+                  101,
+                  116,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "game_session"
+              },
+              {
+                "kind": "account",
+                "path": "player"
+              }
+            ]
+          }
+        },
+        {
+          "name": "game_session",
+          "docs": [
+            "The global game session account. Needed ONLY for deriving the player_bets PDA seeds.",
+            "It's not modified."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  97,
+                  109,
+                  101,
+                  95,
+                  115,
+                  101,
+                  115,
+                  115,
+                  105,
+                  111,
+                  110
+                ]
+              }
+            ]
+          }
         }
       ],
       "args": []
@@ -188,6 +284,11 @@
           ],
           "writable": true,
           "signer": true
+        },
+        {
+          "name": "treasury_sol_account",
+          "writable": true,
+          "address": "DDx7B6zkNhseqcp8Ym5JnP6YyRtMJ19cAML7EtfNz3CX"
         },
         {
           "name": "system_program",
@@ -423,16 +524,16 @@
       "args": []
     },
     {
-      "name": "place_bets",
+      "name": "place_bet",
       "discriminator": [
-        49,
-        131,
-        14,
-        212,
-        212,
-        143,
-        224,
-        150
+        222,
+        62,
+        67,
+        220,
+        63,
+        166,
+        126,
+        33
       ],
       "accounts": [
         {
@@ -893,6 +994,19 @@
   ],
   "events": [
     {
+      "name": "BetPlaced",
+      "discriminator": [
+        88,
+        88,
+        145,
+        226,
+        126,
+        206,
+        32,
+        0
+      ]
+    },
+    {
       "name": "BetsClosed",
       "discriminator": [
         32,
@@ -903,19 +1017,6 @@
         112,
         203,
         79
-      ]
-    },
-    {
-      "name": "BetsPlaced",
-      "discriminator": [
-        33,
-        208,
-        79,
-        174,
-        63,
-        94,
-        22,
-        229
       ]
     },
     {
@@ -1161,27 +1262,7 @@
       }
     },
     {
-      "name": "BetsClosed",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "round",
-            "type": "u64"
-          },
-          {
-            "name": "closer",
-            "type": "pubkey"
-          },
-          {
-            "name": "close_time",
-            "type": "i64"
-          }
-        ]
-      }
-    },
-    {
-      "name": "BetsPlaced",
+      "name": "BetPlaced",
       "type": {
         "kind": "struct",
         "fields": [
@@ -1198,21 +1279,35 @@
             "type": "u64"
           },
           {
-            "name": "bets",
+            "name": "bet",
             "type": {
-              "vec": {
-                "defined": {
-                  "name": "Bet"
-                }
+              "defined": {
+                "name": "Bet"
               }
             }
           },
           {
-            "name": "total_amount",
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "BetsClosed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "round",
             "type": "u64"
           },
           {
-            "name": "timestamp",
+            "name": "closer",
+            "type": "pubkey"
+          },
+          {
+            "name": "close_time",
             "type": "i64"
           }
         ]
