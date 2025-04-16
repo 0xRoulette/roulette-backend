@@ -614,6 +614,118 @@ app.get('/api/player-round-bets', async (req, res) => { // Переименов�
     }
 });
 
+// --- НОВЫЙ ЭНДПОИНТ: Проверка и данные для клейма последнего раунда игрока ---
+app.get('/api/latest_bets', async (req, res) => { // <<< ИЗМЕНЕНО НАЗВАНИЕ
+    const { player } = req.query;
+    console.log(`%c[API LatestBets] Request for player: ${player}`, 'color: magenta;'); // <<< ИЗМЕНЕН ЛОГ
+
+    // 1. Валидация Pubkey
+    if (!player) {
+        return res.status(400).json({ error: 'Player public key required' });
+    }
+    let playerPubkey;
+    try {
+        playerPubkey = new PublicKey(player); // Проверяем валидность
+    } catch (e) {
+        console.error(`[API LatestBets] Invalid player public key format: ${player}`); // <<< ИЗМЕНЕН ЛОГ
+        return res.status(400).json({ error: 'Invalid player public key format' });
+    }
+    const playerPubkeyStr = playerPubkey.toBase58(); // Используем строку дальше
+
+    try {
+        // 2. Найти последний раунд с участием игрока
+        const latestBet = await BetModel.findOne({ player: playerPubkeyStr })
+                                       .sort({ round: -1 }) // Сортируем по убыванию раунда
+                                       .lean();
+
+        if (!latestBet) {
+            console.log(`%c[API LatestBets] No bets found for player ${playerPubkeyStr}.`, 'color: magenta;'); // <<< ИЗМЕНЕН ЛОГ
+            return res.json({ claimable: false });
+        }
+        const playerLatestRound = latestBet.round;
+        console.log(`%c[API LatestBets] Player ${playerPubkeyStr} latest participation round: ${playerLatestRound}.`, 'color: magenta;'); // <<< ИЗМЕНЕН ЛОГ
+
+        // 3. Проверить, завершен ли этот раунд
+        const roundData = await RoundPayoutModel.findOne({ round: playerLatestRound }).lean();
+        if (!roundData || roundData.winningNumber === undefined || roundData.winningNumber === null) {
+            console.log(`%c[API LatestBets] Round ${playerLatestRound} is not completed or winning number not found.`, 'color: magenta;'); // <<< ИЗМЕНЕН ЛОГ
+            return res.json({ claimable: false });
+        }
+        const winningNum = roundData.winningNumber;
+        console.log(`%c[API LatestBets] Round ${playerLatestRound} completed. Winning number: ${winningNum}.`, 'color: magenta;'); // <<< ИЗМЕНЕН ЛОГ
+
+        // 4. Проверить, забрал ли игрок выигрыш за этот раунд
+        const existingClaim = await ClaimRecordModel.findOne({ player: playerPubkeyStr, round: playerLatestRound }).lean();
+        if (existingClaim) {
+            console.log(`%c[API LatestBets] Player ${playerPubkeyStr} already claimed winnings for round ${playerLatestRound}.`, 'color: magenta;'); // <<< ИЗМЕНЕН ЛОГ
+            return res.json({ claimable: false });
+        }
+        console.log(`%c[API LatestBets] Player ${playerPubkeyStr} has NOT claimed winnings for round ${playerLatestRound}. Calculating payout...`, 'color: magenta;'); // <<< ИЗМЕНЕН ЛОГ
+
+        // 5. Рассчитать выигрыш за этот раунд
+        const playerBetsInRound = await BetModel.find({ player: playerPubkeyStr, round: playerLatestRound }).lean();
+
+        if (!playerBetsInRound || playerBetsInRound.length === 0) {
+            console.warn(`%c[API LatestBets] Inconsistency: Found latest round ${playerLatestRound} but no bets for player ${playerPubkeyStr}.`, 'color: red;'); // <<< ИЗМЕНЕН ЛОГ
+            return res.json({ claimable: false });
+        }
+
+        let totalPayoutBN = new BN(0);
+        let roundTokenMint = null; // Узнаем минт из ставок
+        const betsDetails = [];
+
+        for (const betRecord of playerBetsInRound) {
+            if (!roundTokenMint) roundTokenMint = betRecord.tokenMint?.toString(); // Берем минт из первой ставки
+            if (typeof betRecord.betAmount !== 'string' || betRecord.betAmount === null) continue;
+            let betAmountBN;
+            try { betAmountBN = new BN(betRecord.betAmount); } catch { continue; }
+
+            const isWinningBet = isBetWinner(betRecord.betType, betRecord.betNumbers || [], winningNum);
+            let payoutAmountBN = new BN(0);
+            if (isWinningBet) {
+                const multiplier = calculatePayoutMultiplier(betRecord.betType);
+                payoutAmountBN = betAmountBN.mul(multiplier);
+                totalPayoutBN = totalPayoutBN.add(payoutAmountBN); // Суммируем общий выигрыш
+            }
+
+            betsDetails.push({
+                round: playerLatestRound,
+                tokenMint: betRecord.tokenMint?.toString(),
+                betType: mapBetTypeEnumToString(betRecord.betType),
+                numbers: betRecord.betNumbers || [],
+                amountBet: betRecord.betAmount,
+                isWinning: isWinningBet,
+                payoutAmount: payoutAmountBN.toString(),
+                signature: betRecord.signature,
+                timestamp: new Date(betRecord.timestamp).getTime(),
+            });
+        }
+
+         console.log(`%c[API LatestBets] Calculated total payout for player ${playerPubkeyStr} in round ${playerLatestRound}: ${totalPayoutBN.toString()} lamports.`, 'color: magenta;'); // <<< ИЗМЕНЕН ЛОГ
+
+        // 6. Вернуть результат
+        if (totalPayoutBN.gtn(0)) { // gtn(0) - greater than zero
+            // --- УБРАН ВЫЗОВ getTokenInfo И ПОЛЯ tokenSymbol, tokenDecimals ---
+            const response = {
+                claimable: true,
+                roundNumber: playerLatestRound,
+                tokenMint: roundTokenMint, // Оставляем минт, он нужен для клейма
+                totalPayout: totalPayoutBN.toString(),
+                bets: betsDetails
+            };
+            console.log(`%c[API LatestBets] Sending claimable response for player ${playerPubkeyStr}:`, 'color: green; font-weight: bold;', response); // <<< ИЗМЕНЕН ЛОГ
+            return res.json(response);
+        } else {
+             console.log(`%c[API LatestBets] Player ${playerPubkeyStr} has no winnings in round ${playerLatestRound}.`, 'color: magenta;'); // <<< ИЗМЕНЕН ЛОГ
+            return res.json({ claimable: false });
+        }
+
+    } catch (error) {
+        console.error(`%c[API LatestBets] Error processing request for player ${playerPubkeyStr}:`, 'color: red;', error); // <<< ИЗМЕНЕН ЛОГ
+        res.status(500).json({ error: 'Internal server error while checking latest bets' }); // <<< ИЗМЕНЕН ЛОГ
+    }
+});
+
 // --- Payout Calculation Helper Functions ---
 
 // Calculates the payout multiplier based on the bet type enum
