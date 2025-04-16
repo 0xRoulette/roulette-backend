@@ -31,6 +31,7 @@ const provider = new anchor.AnchorProvider(connection, ownerWallet, { commitment
 // --- Database Models ---
 const BetModel = require('./models/Bet');
 const RoundPayoutModel = require('./models/RoundPayout'); // Предполагая, что файл называется RoundPayout.js
+const ClaimRecordModel = require('./models/ClaimRecord'); // <<< ДОБАВИТЬ ЭТУ СТРОКУ
 
 
 // --- Other Constants ---
@@ -248,145 +249,168 @@ async function listenToEvents() {
                                     console.log(`[BetsClosed] Emitted 'betsClosed' (Round: ${eventForSocket.round}) event via Socket.IO.`);
                                     isBetsClosedProcessed = true;
                                 }
-                                // --- RandomGenerated Event Handler ---
+                                // --- RandomGenerated Event Handler (ИЗМЕНЕНИЯ) ---
                                 else if (event.name === 'RandomGenerated' && !isRandomGeneratedProcessed) {
                                     console.log(`[RandomGenerated] Processing event for signature ${signature}...`);
                                     const { round, initiator, winning_number, generation_time, slot, last_bettor } = event.data;
                                     const roundNum = Number(round);
                                     const winningNum = Number(winning_number);
 
-
-
-                                    // --- Расчет выигрышей ---
+                                    // --- Получение всех ставок раунда из БД ---
                                     const betsForRound = await BetModel.find({ round: roundNum }).lean();
-                                    // <<< ИСПРАВЛЕННЫЙ ЛОГ >>>
-                                    console.log(`[RandomGenerated] Found ${betsForRound.length} bet records in DB for round ${roundNum}.`);
-                                    const playerPayouts = new Map(); // Map<playerAddress, { totalPayout: BN, tokenMint: string }>
+                                    console.log(`[RandomGenerated] Found ${betsForRound.length} bet records in DB for round ${roundNum}. Calculating results...`);
+
+                                    const detailedBetResults = []; // Массив для отправки на фронтенд
+                                    const playerPayouts = new Map(); // Map<playerAddress, { totalPayout: BN, tokenMint: string }> (для RoundPayoutModel)
+                                    const payoutsToSave = []; // Для RoundPayoutModel
 
                                     if (betsForRound.length > 0) {
                                         for (const betRecord of betsForRound) {
-                                            // Проверяем, что betAmount существует и это строка
+                                            // Проверка betAmount
                                             if (typeof betRecord.betAmount !== 'string' || betRecord.betAmount === null) {
                                                 console.warn(`[RandomGenerated] Skipping bet record with invalid betAmount for player ${betRecord.player}, round ${roundNum}. Amount:`, betRecord.betAmount);
                                                 continue;
                                             }
-
                                             let betAmountBN;
-                                            try {
-                                                betAmountBN = new BN(betRecord.betAmount); // Преобразуем строку в BN
-                                            } catch (bnError) {
-                                                console.error(`[RandomGenerated] Error converting betAmount '${betRecord.betAmount}' to BN for player ${betRecord.player}, round ${roundNum}. Skipping bet.`, bnError);
-                                                continue; // Пропускаем эту ставку
-                                            }
+                                            try { betAmountBN = new BN(betRecord.betAmount); } catch (bnError) { console.error(`[RandomGenerated] Error converting betAmount '${betRecord.betAmount}' to BN. Skipping.`, bnError); continue; }
 
+                                            const isWinningBet = isBetWinner(betRecord.betType, betRecord.betNumbers || [], winningNum);
+                                            let payoutAmountBN = new BN(0);
+                                            let multiplier = new BN(0); // Инициализируем множитель
 
-                                            if (isBetWinner(betRecord.betType, betRecord.betNumbers, winningNum)) {
-                                                const multiplier = calculatePayoutMultiplier(betRecord.betType);
-                                                const payoutForBet = betAmountBN.mul(multiplier);
+                                            if (isWinningBet) {
+                                                multiplier = calculatePayoutMultiplier(betRecord.betType); // Рассчитываем множитель
+                                                payoutAmountBN = betAmountBN.mul(multiplier); // Рассчитываем выигрыш по ставке
+
+                                                // Обновляем общие выплаты для RoundPayoutModel (логика остается)
                                                 const playerAddress = betRecord.player;
                                                 const tokenMint = betRecord.tokenMint;
                                                 const currentData = playerPayouts.get(playerAddress) || { totalPayout: new BN(0), tokenMint: tokenMint };
-
                                                 if (currentData.tokenMint !== tokenMint) {
-                                                    console.error(`[FATAL] Player ${playerAddress} has winning bets with different mints (${currentData.tokenMint} and ${tokenMint}) in round ${roundNum}. Skipping payout calculation for this player.`);
-                                                    playerPayouts.delete(playerAddress); // Удаляем игрока из выплат, чтобы избежать проблем
-                                                    continue; // Переходим к следующей ставке
+                                                     console.error(`[FATAL] Mismatched mints for player ${playerAddress} in round ${roundNum}. Skipping payout calculation.`);
+                                                     playerPayouts.delete(playerAddress); // Удаляем игрока, чтобы избежать проблем
+                                                     continue; // Пропускаем эту ставку для playerPayouts
                                                 }
-
                                                 playerPayouts.set(playerAddress, {
-                                                    totalPayout: currentData.totalPayout.add(payoutForBet),
+                                                    totalPayout: currentData.totalPayout.add(payoutAmountBN),
                                                     tokenMint: tokenMint
                                                 });
                                             }
+
+                                            // Формируем объект для отправки на фронтенд
+                                            detailedBetResults.push({
+                                                player: betRecord.player.toString(),
+                                                round: roundNum,
+                                                tokenMint: betRecord.tokenMint.toString(),
+                                                betType: mapBetTypeEnumToString(betRecord.betType), // Строковое представление
+                                                numbers: betRecord.betNumbers || [],
+                                                amountBet: betRecord.betAmount, // Сумма ставки (строка)
+                                                isWinning: isWinningBet,
+                                                payoutAmount: payoutAmountBN.toString(), // Сумма выигрыша по этой ставке (строка)
+                                                signature: betRecord.signature,
+                                            });
                                         }
-                                        console.log(`[RandomGenerated] Calculated payouts for ${playerPayouts.size} winners.`);
+                                        console.log(`[RandomGenerated] Calculated detailed results for ${detailedBetResults.length} bets.`);
                                     } else {
-                                        console.log(`[RandomGenerated] No bets found for round ${roundNum}. No payouts calculated.`);
+                                        console.log(`[RandomGenerated] No bets found for round ${roundNum}. No results calculated.`);
                                     }
                                     // --- КОНЕЦ расчета выигрышей ---
 
-                                    // --- Подготовка данных для сохранения и сокета ---
-                                    const calculatedWinningsForSocket = {};
-                                    const payoutsToSave = [];
-                                    let tokenMintForRound = null; // Предполагаем один токен на раунд
-
+                                    // --- Подготовка данных для сохранения RoundPayoutModel (без изменений) ---
+                                    let tokenMintForRound = null;
                                     for (const [player, data] of playerPayouts.entries()) {
-                                        calculatedWinningsForSocket[player] = {
-                                            amount: data.totalPayout.toString(),
-                                            tokenMint: data.tokenMint
-                                        };
-                                        payoutsToSave.push({
-                                            address: player,
-                                            amount: data.totalPayout.toString()
-                                        });
+                                        payoutsToSave.push({ address: player, amount: data.totalPayout.toString() });
                                         if (!tokenMintForRound) tokenMintForRound = data.tokenMint;
                                     }
 
-                                    // --- Сохранение результатов раунда в RoundPayoutModel ---
-                                    if (payoutsToSave.length > 0) { // Сохраняем, только если были победители
+                                    // --- Сохранение результатов раунда в RoundPayoutModel (без изменений) ---
+                                    // Сохраняем, если были победители ИЛИ если ставок не было вообще (чтобы записать winningNumber)
+                                    if (payoutsToSave.length > 0 || betsForRound.length === 0) {
                                         try {
-                                            // Строка ~325: Убираем gameSessionPubkey из фильтра и обновления
                                             await RoundPayoutModel.findOneAndUpdate(
-                                                { round: roundNum }, // <<< Ищем только по раунду
+                                                { round: roundNum },
                                                 {
                                                     round: roundNum,
                                                     winningNumber: winningNum,
-                                                    payouts: payoutsToSave,
-                                                    // gameSessionPubkey: expectedGameSessionPubkey, // <<< УБРАТЬ
+                                                    payouts: payoutsToSave, // Сохраняем общий payout для истории/проверки
                                                 },
                                                 { upsert: true, new: true, setDefaultsOnInsert: true }
                                             );
-                                            console.log(`[RandomGenerated] Saved/Updated RoundPayout data for round ${roundNum}.`);
+                                            console.log(`[RandomGenerated] Saved/Updated RoundPayout data for round ${roundNum}. Payouts array length: ${payoutsToSave.length}`);
                                         } catch (payoutDbError) {
                                             console.error(`[RandomGenerated] Error saving RoundPayout data for round ${roundNum}:`, payoutDbError);
                                         }
                                     } else {
-                                        console.log(`[RandomGenerated] No payouts to save for round ${roundNum}.`);
-                                        // Можно создать запись без выплат, если нужно зафиксировать сам раунд
+                                        console.log(`[RandomGenerated] No winning payouts to save for round ${roundNum}, but bets existed. Still saving round info.`);
+                                         // Опционально: сохранить запись RoundPayout даже без победителей, если были ставки
                                         try {
-                                            // Строка ~347: Убираем gameSessionPubkey из фильтра и обновления
                                             await RoundPayoutModel.findOneAndUpdate(
-                                                { round: roundNum }, // <<< Ищем только по раунду
+                                                { round: roundNum },
                                                 {
                                                     round: roundNum,
                                                     winningNumber: winningNum,
-                                                    payouts: [], // Пустой массив выплат
-                                                    // gameSessionPubkey: expectedGameSessionPubkey, // <<< УБРАТЬ
+                                                    payouts: [], // Пустой массив, т.к. победителей не было
                                                 },
                                                 { upsert: true, new: true, setDefaultsOnInsert: true }
                                             );
-                                            console.log(`[RandomGenerated] Saved empty RoundPayout data for round ${roundNum}.`);
+                                             console.log(`[RandomGenerated] Saved RoundPayout data for round ${roundNum} with empty payouts array.`);
                                         } catch (payoutDbError) {
-                                            console.error(`[RandomGenerated] Error saving empty RoundPayout data for round ${roundNum}:`, payoutDbError);
+                                            console.error(`[RandomGenerated] Error saving RoundPayout data (no winners) for round ${roundNum}:`, payoutDbError);
                                         }
                                     }
                                     // --- КОНЕЦ Сохранения ---
 
-                                    // --- Отправка по WebSocket ---
-                                    const eventForSocket = {
-                                        round: roundNum,
-                                        winningNumber: winningNum,
-                                        timestamp: Number(generation_time) * 1000,
-                                        generationSignature: signature,
-                                        winners: calculatedWinningsForSocket,
-                                        initiator: initiator.toBase58(),
-                                        slot: Number(slot),
-                                        lastBettor: last_bettor.toBase58()
-                                    };
-                                    io.emit('winningsCalculated', eventForSocket);
-                                    console.log(`[RandomGenerated] Emitted 'winningsCalculated' event for round ${roundNum}.`);
-                                    isRandomGeneratedProcessed = true;
+                                    // --- Отправка по WebSocket (НОВЫЙ СПОСОБ) ---
+                                    // Отправляем массив с деталями всех ставок раунда
+                                    io.emit('roundBetsResult', detailedBetResults);
+                                    console.log(`%c[WebSocket] Emitted 'roundBetsResult' event for round ${roundNum} with ${detailedBetResults.length} bet details.`, 'color: blue; font-weight: bold;');
+                                    // --- КОНЕЦ отправки по WebSocket ---
+
+                                    isRandomGeneratedProcessed = true; // Помечаем, что обработали
                                 }
                                 // --- WinningsClaimed Event Handler ---
                                 else if (event.name === 'WinningsClaimed' && !isWinningsClaimedProcessed) {
                                     console.log(`[WinningsClaimed] Processing event for signature ${signature}...`);
                                     const { round, player, token_mint, amount, timestamp } = event.data;
+                                    const roundNum = Number(round);
+                                    const playerAddr = player.toBase58();
+                                    const claimTimestamp = Number(timestamp) * 1000;
+
+                                    // Сохраняем запись о клейме в БД
+                                    try {
+                                        await ClaimRecordModel.findOneAndUpdate(
+                                            { player: playerAddr, round: roundNum },
+                                            {
+                                                player: playerAddr,
+                                                round: roundNum,
+                                                claimSignature: signature, // Сохраняем подпись клейма
+                                                claimedTimestamp: new Date(claimTimestamp),
+                                                tokenMint: token_mint.toBase58(), // Можно добавить минт и сумму, если нужно
+                                                amountClaimed: amount.toString(),
+                                            },
+                                            { upsert: true, new: true } // Создать, если нет, или обновить
+                                        );
+                                        console.log(`[WinningsClaimed] Saved/Updated ClaimRecord for player ${playerAddr}, round ${roundNum}.`);
+                                    } catch (dbError) {
+                                        // Обработка ошибки дубликата подписи, если нужно (хотя findOneAndUpdate с upsert должен справиться)
+                                        if (dbError.code === 11000 && dbError.keyPattern && dbError.keyPattern.claimSignature) {
+                                             console.warn(`[WinningsClaimed] Claim signature ${signature} already exists. Ignoring DB update.`);
+                                        } else if (dbError.code === 11000 && dbError.keyPattern && dbError.keyPattern['player'] && dbError.keyPattern['round']) {
+                                             console.warn(`[WinningsClaimed] Claim record for player ${playerAddr}, round ${roundNum} already exists. Updating timestamp/signature potentially.`);
+                                             // Можно добавить логику обновления, если нужно
+                                        }
+                                         else {
+                                             console.error(`[WinningsClaimed] Error saving ClaimRecord for player ${playerAddr}, round ${roundNum}:`, dbError);
+                                         }
+                                    }
+
+                                    // Отправляем событие по WebSocket (оставляем, т.к. может быть полезно для UI)
                                     const eventForSocket = {
-                                        round: Number(round),
-                                        player: player.toBase58(),
+                                        round: roundNum,
+                                        player: playerAddr,
                                         tokenMint: token_mint.toBase58(),
                                         amount: amount.toString(),
-                                        timestamp: Number(timestamp) * 1000, // В миллисекундах
+                                        timestamp: claimTimestamp, // В миллисекундах
                                         claimSignature: signature
                                     };
                                     io.emit('winningsClaimed', eventForSocket);
@@ -500,6 +524,93 @@ app.get('/api/round-payouts', async (req, res) => {
     } catch (error) {
         console.error(`[API Payouts] Error fetching payout data for round ${roundNumber}:`, error);
         res.status(500).json({ error: 'Internal server error while fetching payout data' });
+    }
+});
+
+// --- НОВЫЙ ЭНДПОИНТ: Получить ВСЕ ставки игрока за раунд с метками выигрыша ---
+app.get('/api/player-round-bets', async (req, res) => { // Переименовал для ясности
+    const { player, round } = req.query;
+    console.log(`[API PlayerBets] Request for player: ${player}, round: ${round}`);
+
+    // Валидация входных данных
+    if (!player || !round || isNaN(parseInt(round))) {
+        return res.status(400).json({ error: 'Valid player public key and round number required' });
+    }
+    try {
+        new PublicKey(player); // Проверяем, валидный ли pubkey
+    } catch (e) {
+        return res.status(400).json({ error: 'Invalid player public key format' });
+    }
+    const roundNumber = parseInt(round);
+    const playerPubkeyStr = player;
+
+    try {
+        // 1. Проверяем, был ли уже забран выигрыш за этот раунд (для информации)
+        const existingClaim = await ClaimRecordModel.findOne({ player: playerPubkeyStr, round: roundNumber }).lean();
+        const alreadyClaimed = !!existingClaim; // true, если запись есть, иначе false
+
+        // 2. Получаем информацию о раунде (выигрышное число)
+        // Нам нужно winningNumber, даже если уже забрано, чтобы пометить ставки правильно
+        const roundPayoutData = await RoundPayoutModel.findOne({ round: roundNumber }).lean();
+        let winningNum = null; // Изначально null
+        if (roundPayoutData && roundPayoutData.winningNumber !== undefined && roundPayoutData.winningNumber !== null) {
+            winningNum = roundPayoutData.winningNumber;
+        } else {
+             // Если winningNumber еще нет, значит раунд не завершен.
+             // Мы все равно можем вернуть ставки, но isWinning будет всегда false.
+             console.log(`[API PlayerBets] Winning number not found for round ${roundNumber}. Bets won't be marked as winning yet.`);
+        }
+
+
+        // 3. Получаем все ставки этого игрока за этот раунд
+        const playerBetsInRound = await BetModel.find({ player: playerPubkeyStr, round: roundNumber })
+                                        .sort({ timestamp: 1 }) // Сортируем по времени ставки (опционально)
+                                        .lean();
+
+        if (!playerBetsInRound || playerBetsInRound.length === 0) {
+            console.log(`[API PlayerBets] No bets found for player ${playerPubkeyStr} in round ${roundNumber}.`);
+            // Возвращаем пустой массив и статус claimed
+            return res.json({ bets: [], alreadyClaimed });
+        }
+
+        // 4. Форматируем результат для КАЖДОЙ ставки
+        const allPlayerBetsDetails = [];
+        for (const betRecord of playerBetsInRound) {
+             if (typeof betRecord.betAmount !== 'string' || betRecord.betAmount === null) continue; // Пропуск некорректных
+             let betAmountBN;
+             try { betAmountBN = new BN(betRecord.betAmount); } catch { continue; }
+
+             // Определяем выигрыш, только если winningNum известно
+             const isWinningBet = (winningNum !== null)
+                                  ? isBetWinner(betRecord.betType, betRecord.betNumbers || [], winningNum)
+                                  : false; // Если раунд не завершен, ставка не выигрышная
+
+            let payoutAmountBN = new BN(0);
+            if (isWinningBet) { // Рассчитываем payout только если ставка выигрышная
+                const multiplier = calculatePayoutMultiplier(betRecord.betType);
+                payoutAmountBN = betAmountBN.mul(multiplier);
+            }
+
+            allPlayerBetsDetails.push({
+                round: roundNumber,
+                tokenMint: betRecord.tokenMint.toString(),
+                betType: mapBetTypeEnumToString(betRecord.betType),
+                numbers: betRecord.betNumbers || [],
+                amountBet: betRecord.betAmount, // Сумма ставки (строка lamports)
+                isWinning: isWinningBet, // true / false
+                payoutAmount: payoutAmountBN.toString(), // Сумма выигрыша (строка lamports, "0" если не выиграла)
+                signature: betRecord.signature,
+                timestamp: new Date(betRecord.timestamp).getTime(), // Добавим timestamp ставки
+            });
+        }
+
+        console.log(`[API PlayerBets] Found ${allPlayerBetsDetails.length} bets for player ${playerPubkeyStr} in round ${roundNumber}. Already claimed: ${alreadyClaimed}`);
+        // Возвращаем массив ВСЕХ ставок и флаг, был ли клейм
+        res.json({ bets: allPlayerBetsDetails, alreadyClaimed });
+
+    } catch (error) {
+        console.error(`[API PlayerBets] Error fetching bets for player ${playerPubkeyStr}, round ${roundNumber}:`, error);
+        res.status(500).json({ error: 'Internal server error while fetching player bets' });
     }
 });
 
