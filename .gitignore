@@ -30,3 +30,5 @@
     # Secrets (!!! IMPORTANT !!!)
     id.json
     config.js
+node_modules/
+node_modules/

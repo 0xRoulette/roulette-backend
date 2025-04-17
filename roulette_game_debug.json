@@ -1,0 +1,1873 @@
+{
+  "address": "8KKpjq7wh5fqrAr1dr65WCMCW1h7oaFWWvwbJJhawVwX",
+  "metadata": {
+    "name": "roulette_game",
+    "version": "0.1.3",
+    "spec": "0.1.0",
+    "description": "Created with Anchor"
+  },
+  "instructions": [
+    {
+      "name": "claim_winnings_with_proof",
+      "discriminator": [
+        73,
+        175,
+        95,
+        230,
+        37,
+        8,
+        108,
+        63
+      ],
+      "accounts": [
+        {
+          "name": "player",
+          "docs": [
+            "The player claiming the winnings (signer). Pays for `claim_record` creation."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "vault",
+          "docs": [
+            "The vault corresponding to the token mint of the winnings being claimed. Mutable to update liquidity."
+          ],
+          "writable": true
+        },
+        {
+          "name": "vault_token_account",
+          "docs": [
+            "The vault's SPL token account, holding the liquidity from which winnings are paid."
+          ],
+          "writable": true
+        },
+        {
+          "name": "player_token_account",
+          "docs": [
+            "The player's SPL token account where the winnings will be deposited."
+          ],
+          "writable": true
+        },
+        {
+          "name": "round_payout_info",
+          "docs": [
+            "The account storing the Merkle root for the specified `round`.",
+            "Seeds: [b\"payout_info\", round_number]"
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  97,
+                  121,
+                  111,
+                  117,
+                  116,
+                  95,
+                  105,
+                  110,
+                  102,
+                  111
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "round"
+              }
+            ]
+          }
+        },
+        {
+          "name": "claim_record",
+          "docs": [
+            "A record created to prevent double-claiming for a specific player and round.",
+            "Seeds: [b\"claim_record\", round_number, player_key]"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  108,
+                  97,
+                  105,
+                  109,
+                  95,
+                  114,
+                  101,
+                  99,
+                  111,
+                  114,
+                  100
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "round"
+              },
+              {
+                "kind": "account",
+                "path": "player"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program",
+          "docs": [
+            "The SPL Token Program, needed for the token transfer CPI."
+          ],
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "docs": [
+            "The Solana System Program, needed for creating `claim_record`."
+          ],
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "rent",
+          "docs": [
+            "The Rent Sysvar, needed for `claim_record` initialization."
+          ],
+          "address": "SysvarRent111111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "round",
+          "type": "u64"
+        },
+        {
+          "name": "amount",
+          "type": "u64"
+        },
+        {
+          "name": "proof",
+          "type": {
+            "vec": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "initialize_and_provide_liquidity",
+      "discriminator": [
+        220,
+        185,
+        240,
+        68,
+        206,
+        145,
+        211,
+        105
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "docs": [
+            "The authority account (signer) authorized to initialize vaults. Pays for account creation."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "token_mint",
+          "docs": [
+            "The mint account of the SPL token for the new vault."
+          ]
+        },
+        {
+          "name": "vault",
+          "docs": [
+            "The `VaultAccount` PDA to be initialized.",
+            "Seeds: [b\"vault\", token_mint_key]"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "provider_token_account",
+          "docs": [
+            "The initial liquidity provider's SPL token account."
+          ],
+          "writable": true
+        },
+        {
+          "name": "vault_token_account",
+          "docs": [
+            "The vault's associated token account (ATA is recommended)."
+          ]
+        },
+        {
+          "name": "liquidity_provider",
+          "docs": [
+            "The initial liquidity provider (signer). Can be the same as `authority`."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "docs": [
+            "The Solana System Program."
+          ],
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "token_program",
+          "docs": [
+            "The SPL Token Program."
+          ],
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "rent",
+          "docs": [
+            "The Rent Sysvar."
+          ],
+          "address": "SysvarRent111111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "initialize_game_session",
+      "discriminator": [
+        127,
+        189,
+        104,
+        88,
+        218,
+        56,
+        57,
+        243
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "reward_token_mint"
+        },
+        {
+          "name": "game_session",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  97,
+                  109,
+                  101,
+                  95,
+                  115,
+                  101,
+                  115,
+                  115,
+                  105,
+                  111,
+                  110
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "rent",
+          "address": "SysvarRent111111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "initialize_vault",
+      "docs": [
+        "Initializes a new `VaultAccount` for a given SPL token mint.",
+        "This sets up the liquidity pool and reward tracking for that token.",
+        "Can only be called by the designated program `authority`."
+      ],
+      "discriminator": [
+        48,
+        191,
+        163,
+        44,
+        71,
+        129,
+        63,
+        164
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "docs": [
+            "The authority account (signer) authorized to initialize vaults. Pays for account creation."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "token_mint",
+          "docs": [
+            "The mint account of the SPL token for which the vault is being created."
+          ]
+        },
+        {
+          "name": "vault",
+          "docs": [
+            "The `VaultAccount` PDA to be initialized. Space includes base size + buffer.",
+            "Seeds: [b\"vault\", token_mint_key]"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault_token_account",
+          "docs": [
+            "The SPL Token account associated with the `VaultAccount` PDA. This account will hold the liquidity.",
+            "It's expected that this token account is created *before* calling `initialize_vault`,",
+            "typically using the associated token account program, with the `vault` PDA as the owner."
+          ]
+        },
+        {
+          "name": "system_program",
+          "docs": [
+            "The Solana System Program, required for account creation."
+          ],
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "token_program",
+          "docs": [
+            "The SPL Token Program, required for token account validation."
+          ],
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "rent",
+          "docs": [
+            "The Rent Sysvar, required for account initialization checks."
+          ],
+          "address": "SysvarRent111111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "place_bets",
+      "discriminator": [
+        49,
+        131,
+        14,
+        212,
+        212,
+        143,
+        224,
+        150
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "docs": [
+            "The vault corresponding to the token the player is betting with. Mutable to update liquidity and rewards."
+          ],
+          "writable": true
+        },
+        {
+          "name": "game_session",
+          "docs": [
+            "The global `GameSession` account. Mutable to update bet counts and `round_bets`."
+          ],
+          "writable": true
+        },
+        {
+          "name": "player_token_account",
+          "docs": [
+            "The player's SPL token account holding the tokens to bet."
+          ],
+          "writable": true
+        },
+        {
+          "name": "vault_token_account",
+          "docs": [
+            "The vault's SPL token account where the bet amount will be transferred."
+          ],
+          "writable": true
+        },
+        {
+          "name": "player",
+          "docs": [
+            "The player placing the bets (signer). Pays for `player_bets` initialization if needed."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "player_bets",
+          "docs": [
+            "The account storing the player's bets for the current round.",
+            "Initialized if needed (though current logic uses init_if_needed commented out - relies on pre-creation or handles in logic).",
+            "Seeds: [b\"player_bets\", game_session_key, player_key]"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  108,
+                  97,
+                  121,
+                  101,
+                  114,
+                  95,
+                  98,
+                  101,
+                  116,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "game_session"
+              },
+              {
+                "kind": "account",
+                "path": "player"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program",
+          "docs": [
+            "The SPL Token Program, needed for the bet transfer CPI."
+          ],
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "docs": [
+            "The Solana System Program, potentially needed for `init_if_needed`."
+          ],
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "rent",
+          "docs": [
+            "The Rent Sysvar, potentially needed for `init_if_needed`."
+          ],
+          "address": "SysvarRent111111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "bets_bytes",
+          "type": "bytes"
+        }
+      ]
+    },
+    {
+      "name": "provide_liquidity",
+      "docs": [
+        "Allows a user (`liquidity_provider`) to deposit SPL tokens into a specific `VaultAccount`,",
+        "increasing the vault's liquidity and recording the contribution."
+      ],
+      "discriminator": [
+        40,
+        110,
+        107,
+        116,
+        174,
+        127,
+        97,
+        204
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "docs": [
+            "The vault account to which liquidity is being added. Mutable to update `total_liquidity` and `liquidity_pool`."
+          ],
+          "writable": true
+        },
+        {
+          "name": "provider_token_account",
+          "docs": [
+            "The liquidity provider's SPL token account, from which tokens will be transferred."
+          ],
+          "writable": true
+        },
+        {
+          "name": "vault_token_account",
+          "docs": [
+            "The vault's SPL token account, where the provided liquidity will be deposited."
+          ],
+          "writable": true
+        },
+        {
+          "name": "liquidity_provider",
+          "docs": [
+            "The liquidity provider (signer)."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "token_program",
+          "docs": [
+            "The SPL Token Program, needed for the token transfer CPI."
+          ],
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "docs": [
+            "The Solana System Program."
+          ],
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "resize_game_session_final",
+      "discriminator": [
+        93,
+        116,
+        145,
+        136,
+        60,
+        166,
+        53,
+        127
+      ],
+      "accounts": [
+        {
+          "name": "game_session",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  97,
+                  109,
+                  101,
+                  95,
+                  115,
+                  101,
+                  115,
+                  115,
+                  105,
+                  111,
+                  110
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "resize_game_session_intermediate",
+      "discriminator": [
+        50,
+        24,
+        163,
+        84,
+        68,
+        180,
+        158,
+        160
+      ],
+      "accounts": [
+        {
+          "name": "game_session",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  97,
+                  109,
+                  101,
+                  95,
+                  115,
+                  101,
+                  115,
+                  115,
+                  105,
+                  111,
+                  110
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "resize_game_session_mid_final",
+      "discriminator": [
+        37,
+        229,
+        112,
+        5,
+        182,
+        10,
+        186,
+        217
+      ],
+      "accounts": [
+        {
+          "name": "game_session",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  97,
+                  109,
+                  101,
+                  95,
+                  115,
+                  101,
+                  115,
+                  115,
+                  105,
+                  111,
+                  110
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "start_new_round",
+      "discriminator": [
+        180,
+        48,
+        50,
+        160,
+        186,
+        163,
+        79,
+        185
+      ],
+      "accounts": [
+        {
+          "name": "game_session",
+          "docs": [
+            "The global `GameSession` account. Mutable to update round status, number, times, etc."
+          ],
+          "writable": true
+        },
+        {
+          "name": "reward_vault",
+          "docs": [
+            "The vault holding the reward tokens (e.g., GRON). Mutable to subtract the starter reward."
+          ],
+          "writable": true
+        },
+        {
+          "name": "starter_token_account",
+          "docs": [
+            "The SPL token account of the user starting the round, where the reward will be sent."
+          ],
+          "writable": true
+        },
+        {
+          "name": "reward_vault_token_account",
+          "docs": [
+            "The `reward_vault`'s SPL token account."
+          ],
+          "writable": true
+        },
+        {
+          "name": "starter",
+          "docs": [
+            "The user initiating the new round (signer)."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "token_program",
+          "docs": [
+            "The SPL Token Program, needed for the reward transfer CPI."
+          ],
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "docs": [
+            "The Solana System Program."
+          ],
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "submit_payout_root",
+      "discriminator": [
+        64,
+        163,
+        240,
+        96,
+        71,
+        108,
+        123,
+        95
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "docs": [
+            "The authorized backend authority (signer). Pays for `round_payout_info` creation."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "game_session",
+          "docs": [
+            "The global `GameSession` account, used to verify the round status."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  97,
+                  109,
+                  101,
+                  95,
+                  115,
+                  101,
+                  115,
+                  115,
+                  105,
+                  111,
+                  110
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "round_payout_info",
+          "docs": [
+            "The `RoundPayoutInfo` account to be initialized for this `round`.",
+            "Ensures the root is submitted only once per round.",
+            "Seeds: [b\"payout_info\", round_number]"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  97,
+                  121,
+                  111,
+                  117,
+                  116,
+                  95,
+                  105,
+                  110,
+                  102,
+                  111
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "round"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "docs": [
+            "The Solana System Program, needed for account creation."
+          ],
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "rent",
+          "docs": [
+            "The Rent Sysvar, needed for `init`."
+          ],
+          "address": "SysvarRent111111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "round",
+          "type": "u64"
+        },
+        {
+          "name": "root",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "withdraw_liquidity",
+      "discriminator": [
+        149,
+        158,
+        33,
+        185,
+        47,
+        243,
+        253,
+        31
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "docs": [
+            "The vault account from which liquidity is being withdrawn. Mutable to update `total_liquidity` and `liquidity_pool`."
+          ],
+          "writable": true
+        },
+        {
+          "name": "provider_token_account",
+          "docs": [
+            "The liquidity provider's SPL token account, where withdrawn tokens will be deposited."
+          ],
+          "writable": true
+        },
+        {
+          "name": "vault_token_account",
+          "docs": [
+            "The vault's SPL token account, from which tokens will be transferred."
+          ],
+          "writable": true
+        },
+        {
+          "name": "liquidity_provider",
+          "docs": [
+            "The liquidity provider requesting the withdrawal (signer)."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "token_program",
+          "docs": [
+            "The SPL Token Program, needed for the token transfer CPI."
+          ],
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "docs": [
+            "The Solana System Program."
+          ],
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "withdraw_owner_revenue",
+      "discriminator": [
+        6,
+        79,
+        251,
+        229,
+        70,
+        122,
+        7,
+        32
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "docs": [
+            "The vault account holding the owner revenue. Mutable to update `total_liquidity` and `owner_reward`."
+          ],
+          "writable": true
+        },
+        {
+          "name": "owner_token_account",
+          "docs": [
+            "The owner's SPL token account, where withdrawn revenue will be deposited."
+          ],
+          "writable": true
+        },
+        {
+          "name": "vault_token_account",
+          "docs": [
+            "The vault's SPL token account, from which revenue will be transferred."
+          ],
+          "writable": true
+        },
+        {
+          "name": "authority",
+          "docs": [
+            "The program authority requesting the withdrawal (signer). Must match `vault.authority`."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "token_program",
+          "docs": [
+            "The SPL Token Program, needed for the token transfer CPI."
+          ],
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "docs": [
+            "The Solana System Program."
+          ],
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "withdraw_provider_revenue",
+      "discriminator": [
+        46,
+        47,
+        236,
+        66,
+        138,
+        80,
+        33,
+        95
+      ],
+      "accounts": [
+        {
+          "name": "vault",
+          "docs": [
+            "The vault account holding the rewards. Mutable to update `total_liquidity` and `provider_rewards`."
+          ],
+          "writable": true
+        },
+        {
+          "name": "provider_token_account",
+          "docs": [
+            "The liquidity provider's SPL token account, where withdrawn rewards will be deposited."
+          ],
+          "writable": true
+        },
+        {
+          "name": "vault_token_account",
+          "docs": [
+            "The vault's SPL token account, from which rewards will be transferred."
+          ],
+          "writable": true
+        },
+        {
+          "name": "liquidity_provider",
+          "docs": [
+            "The liquidity provider requesting the withdrawal (signer)."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "token_program",
+          "docs": [
+            "The SPL Token Program, needed for the token transfer CPI."
+          ],
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "docs": [
+            "The Solana System Program."
+          ],
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    }
+  ],
+  "accounts": [
+    {
+      "name": "ClaimRecord",
+      "discriminator": [
+        57,
+        229,
+        0,
+        9,
+        65,
+        62,
+        96,
+        7
+      ]
+    },
+    {
+      "name": "GameSession",
+      "discriminator": [
+        150,
+        116,
+        20,
+        197,
+        205,
+        121,
+        220,
+        240
+      ]
+    },
+    {
+      "name": "PlayerBets",
+      "discriminator": [
+        244,
+        3,
+        166,
+        99,
+        111,
+        132,
+        107,
+        192
+      ]
+    },
+    {
+      "name": "RoundPayoutInfo",
+      "discriminator": [
+        89,
+        71,
+        183,
+        133,
+        247,
+        229,
+        162,
+        134
+      ]
+    },
+    {
+      "name": "VaultAccount",
+      "discriminator": [
+        230,
+        251,
+        241,
+        83,
+        139,
+        202,
+        93,
+        28
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "BetsClosed",
+      "discriminator": [
+        32,
+        95,
+        110,
+        70,
+        247,
+        112,
+        203,
+        79
+      ]
+    },
+    {
+      "name": "BetsPlaced",
+      "discriminator": [
+        33,
+        208,
+        79,
+        174,
+        63,
+        94,
+        22,
+        229
+      ]
+    },
+    {
+      "name": "LiquidityProvided",
+      "discriminator": [
+        94,
+        97,
+        39,
+        34,
+        15,
+        96,
+        79,
+        135
+      ]
+    },
+    {
+      "name": "LiquidityWithdrawn",
+      "discriminator": [
+        240,
+        120,
+        73,
+        139,
+        154,
+        31,
+        218,
+        68
+      ]
+    },
+    {
+      "name": "OwnerRevenueWithdrawn",
+      "discriminator": [
+        15,
+        193,
+        135,
+        170,
+        204,
+        242,
+        169,
+        202
+      ]
+    },
+    {
+      "name": "PayoutClaimed",
+      "discriminator": [
+        200,
+        39,
+        105,
+        112,
+        116,
+        63,
+        58,
+        149
+      ]
+    },
+    {
+      "name": "PayoutRootSubmitted",
+      "discriminator": [
+        31,
+        150,
+        171,
+        193,
+        251,
+        176,
+        189,
+        33
+      ]
+    },
+    {
+      "name": "ProviderRevenueWithdrawn",
+      "discriminator": [
+        103,
+        81,
+        191,
+        73,
+        62,
+        73,
+        62,
+        95
+      ]
+    },
+    {
+      "name": "RandomGenerated",
+      "discriminator": [
+        15,
+        22,
+        79,
+        163,
+        86,
+        172,
+        16,
+        176
+      ]
+    },
+    {
+      "name": "RoundCompleted",
+      "discriminator": [
+        65,
+        194,
+        3,
+        183,
+        49,
+        1,
+        215,
+        5
+      ]
+    },
+    {
+      "name": "RoundStarted",
+      "discriminator": [
+        180,
+        209,
+        2,
+        244,
+        238,
+        48,
+        170,
+        120
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "ArithmeticOverflow",
+      "msg": "Arithmetic overflow error during calculation."
+    },
+    {
+      "code": 6001,
+      "name": "InvalidNumberOfBets",
+      "msg": "Number of bets in a single transaction must be between 1 and MAX_BETS_PER_TX."
+    },
+    {
+      "code": 6002,
+      "name": "InsufficientFunds",
+      "msg": "Insufficient funds in the player's token account for the bet."
+    },
+    {
+      "code": 6003,
+      "name": "InsufficientLiquidity",
+      "msg": "Insufficient liquidity in the vault to cover payout or withdrawal."
+    },
+    {
+      "code": 6004,
+      "name": "Unauthorized",
+      "msg": "Unauthorized: Signer does not have the required permissions."
+    },
+    {
+      "code": 6005,
+      "name": "NoReward",
+      "msg": "No reward available for withdrawal."
+    },
+    {
+      "code": 6006,
+      "name": "MustWithdrawExactAmount",
+      "msg": "Liquidity withdrawal must match the exact total amount provided and not yet withdrawn."
+    },
+    {
+      "code": 6007,
+      "name": "InvalidBet",
+      "msg": "Invalid bet type or numbers provided."
+    },
+    {
+      "code": 6008,
+      "name": "InvalidTokenAccount",
+      "msg": "Invalid SPL token account provided (e.g., wrong mint, owner, or not initialized)."
+    },
+    {
+      "code": 6009,
+      "name": "RoundInProgress",
+      "msg": "Cannot start a new round while one is already in progress."
+    },
+    {
+      "code": 6010,
+      "name": "BetsNotAccepted",
+      "msg": "Bets cannot be placed as the round is not in the 'AcceptingBets' status."
+    },
+    {
+      "code": 6011,
+      "name": "InvalidRoundStatus",
+      "msg": "The current round status does not allow this operation."
+    },
+    {
+      "code": 6012,
+      "name": "TooEarlyToClose",
+      "msg": "Too early to close bets; the minimum round duration has not elapsed."
+    },
+    {
+      "code": 6013,
+      "name": "TooEarlyForPayouts",
+      "msg": "Too early for payouts; necessary processing or delay period not complete."
+    },
+    {
+      "code": 6014,
+      "name": "NoBetsInRound",
+      "msg": "Player has no bets recorded for this round (used internally?)."
+    },
+    {
+      "code": 6015,
+      "name": "GameSessionNotFound",
+      "msg": "The global GameSession account was not found or is not initialized."
+    },
+    {
+      "code": 6016,
+      "name": "InvalidRewardToken",
+      "msg": "The provided reward token mint or account does not match the configured reward mint."
+    },
+    {
+      "code": 6017,
+      "name": "VaultMismatch",
+      "msg": "The vault specified in the bet does not match the vault associated with the PlayerBets account for this round."
+    },
+    {
+      "code": 6018,
+      "name": "RandomBeforeClosing",
+      "msg": "Cannot generate the random number before the betting phase is closed."
+    },
+    {
+      "code": 6019,
+      "name": "RandomAlreadyGenerated",
+      "msg": "The random number for this round has already been generated."
+    },
+    {
+      "code": 6020,
+      "name": "InvalidPlayerBetsAccount",
+      "msg": "The provided PlayerBets account is invalid or does not match expectations."
+    },
+    {
+      "code": 6021,
+      "name": "InvalidRoundForPayoutRoot",
+      "msg": "Invalid round number specified for submitting the payout root."
+    },
+    {
+      "code": 6022,
+      "name": "RoundNotCompletedForPayout",
+      "msg": "The specified round is not yet completed, cannot submit payout root."
+    },
+    {
+      "code": 6023,
+      "name": "MerkleProofInvalid",
+      "msg": "Merkle proof verification failed."
+    },
+    {
+      "code": 6024,
+      "name": "PayoutRootNotSubmitted",
+      "msg": "Payout root has not been submitted for the specified round."
+    },
+    {
+      "code": 6025,
+      "name": "PayoutAlreadyClaimed",
+      "msg": "Payout for this player and round has already been claimed."
+    },
+    {
+      "code": 6026,
+      "name": "AlreadyInitialized",
+      "msg": "Game session account is already initialized."
+    },
+    {
+      "code": 6027,
+      "name": "InvalidResizeOrder",
+      "msg": "Attempted final resize before intermediate resize was done."
+    }
+  ],
+  "types": [
+    {
+      "name": "Bet",
+      "docs": [
+        "Represents a single bet placed by a player."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "amount",
+            "docs": [
+              "The amount wagered for this bet (in the vault token's smallest unit, e.g., lamports)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "bet_type",
+            "docs": [
+              "The type of bet placed, encoded as a u8. See BET_TYPE_* constants."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "numbers",
+            "docs": [
+              "Numbers associated with the bet. Usage depends on `bet_type`.",
+              "Unused elements are typically 0. Max 4 numbers needed (e.g., for Corner bets)."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                4
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "ClaimRecord",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "claimed",
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "GameSession",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "current_round",
+            "type": "u64"
+          },
+          {
+            "name": "round_start_time",
+            "type": "i64"
+          },
+          {
+            "name": "round_status",
+            "type": {
+              "defined": {
+                "name": "RoundStatus"
+              }
+            }
+          },
+          {
+            "name": "winning_number",
+            "type": {
+              "option": "u8"
+            }
+          },
+          {
+            "name": "payout_root",
+            "type": {
+              "option": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            }
+          },
+          {
+            "name": "starter",
+            "type": {
+              "option": "pubkey"
+            }
+          },
+          {
+            "name": "closer",
+            "type": {
+              "option": "pubkey"
+            }
+          },
+          {
+            "name": "bets_closed_timestamp",
+            "type": "i64"
+          },
+          {
+            "name": "get_random_timestamp",
+            "type": "i64"
+          },
+          {
+            "name": "bets_count",
+            "type": "u64"
+          },
+          {
+            "name": "total_bet_amount",
+            "type": "u64"
+          },
+          {
+            "name": "vaults",
+            "type": {
+              "vec": "pubkey"
+            }
+          },
+          {
+            "name": "reward_token_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "round_bets",
+            "type": {
+              "vec": {
+                "defined": {
+                  "name": "RoundBetEntry"
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "LiquidityProvision",
+      "docs": [
+        "Represents a single instance of liquidity provided by a user."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "provider",
+            "docs": [
+              "The public key of the liquidity provider."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "docs": [
+              "The amount of liquidity provided in this instance."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "docs": [
+              "Unix timestamp when the liquidity was provided."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "withdrawn",
+            "docs": [
+              "Flag indicating if this specific provision has been withdrawn."
+            ],
+            "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PlayerBets",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "player",
+            "type": "pubkey"
+          },
+          {
+            "name": "round",
+            "type": "u64"
+          },
+          {
+            "name": "vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "token_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "bets",
+            "type": {
+              "vec": {
+                "defined": {
+                  "name": "Bet"
+                }
+              }
+            }
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ProviderReward",
+      "docs": [
+        "Tracks the accumulated reward for a specific liquidity provider within a vault."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "provider",
+            "docs": [
+              "The public key of the liquidity provider."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "accumulated_reward",
+            "docs": [
+              "The total reward accumulated by this provider, claimable via `withdraw_provider_revenue`."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RoundBetEntry",
+      "docs": [
+        "Stores a reference to a player's bets within a specific vault for a given round.",
+        "Used in `GameSession` to track all bets placed in the current round across different vaults."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "vault",
+            "docs": [
+              "The public key of the `VaultAccount` where the bet was placed."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "player_bets",
+            "docs": [
+              "The public key of the `PlayerBets` account holding the bet details."
+            ],
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RoundPayoutInfo",
+      "docs": [
+        "Stores the Merkle root for payouts of a specific completed round.",
+        "Initialized once per round by the `submit_payout_root` instruction."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "round",
+            "docs": [
+              "The round number this payout information pertains to."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "payout_root",
+            "docs": [
+              "The Merkle root calculated from all winning payouts for this round."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "submitted_by",
+            "docs": [
+              "The public key of the authority (backend) that submitted this root."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "timestamp",
+            "docs": [
+              "Unix timestamp when the root was submitted."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "Bump seed for the PDA."
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RoundStatus",
+      "docs": [
+        "Defines the possible states of a roulette game round."
+      ],
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "NotStarted"
+          },
+          {
+            "name": "AcceptingBets"
+          },
+          {
+            "name": "BetsClosed"
+          },
+          {
+            "name": "WaitingForRandom"
+          },
+          {
+            "name": "Completed"
+          }
+        ]
+      }
+    },
+    {
+      "name": "VaultAccount",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "token_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "token_account",
+            "type": "pubkey"
+          },
+          {
+            "name": "total_liquidity",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "liquidity_pool",
+            "type": {
+              "vec": {
+                "defined": {
+                  "name": "LiquidityProvision"
+                }
+              }
+            }
+          },
+          {
+            "name": "total_turnover",
+            "type": "u64"
+          },
+          {
+            "name": "provider_rewards",
+            "type": {
+              "vec": {
+                "defined": {
+                  "name": "ProviderReward"
+                }
+              }
+            }
+          },
+          {
+            "name": "owner_reward",
+            "type": "u64"
+          }
+        ]
+      }
+    }
+  ]
+}
