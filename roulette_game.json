@@ -1,5 +1,5 @@
 {
-  "address": "32T21T93tobSziz7QSojRwsDiWawnr66ys2db8WbBioF",
+  "address": "39yLJnQTeKW56z8kK64KReuEHVKiHLGGr3ZKTM6dLJrS",
   "metadata": {
     "name": "roulette_game",
     "version": "0.1.3",
@@ -266,16 +266,10 @@
         },
         {
           "name": "provider_token_account",
-          "docs": [
-            "The initial liquidity provider's SPL token account."
-          ],
           "writable": true
         },
         {
-          "name": "vault_token_account",
-          "docs": [
-            "The vault's associated token account (ATA is recommended)."
-          ]
+          "name": "vault_token_account"
         },
         {
           "name": "liquidity_provider",
@@ -573,16 +567,10 @@
         },
         {
           "name": "player_token_account",
-          "docs": [
-            "The player's SPL token account holding the tokens to bet."
-          ],
           "writable": true
         },
         {
           "name": "vault_token_account",
-          "docs": [
-            "The vault's SPL token account where the bet amount will be transferred."
-          ],
           "writable": true
         },
         {
@@ -670,16 +658,10 @@
         },
         {
           "name": "provider_token_account",
-          "docs": [
-            "The liquidity provider's SPL token account, from which tokens will be transferred."
-          ],
           "writable": true
         },
         {
           "name": "vault_token_account",
-          "docs": [
-            "The vault's SPL token account, where the provided liquidity will be deposited."
-          ],
           "writable": true
         },
         {
@@ -790,16 +772,10 @@
         },
         {
           "name": "provider_token_account",
-          "docs": [
-            "The liquidity provider's SPL token account, where withdrawn tokens will be deposited."
-          ],
           "writable": true
         },
         {
           "name": "vault_token_account",
-          "docs": [
-            "The vault's SPL token account, from which tokens will be transferred."
-          ],
           "writable": true
         },
         {
@@ -854,16 +830,10 @@
         },
         {
           "name": "owner_token_account",
-          "docs": [
-            "The owner's SPL token account, where withdrawn revenue will be deposited."
-          ],
           "writable": true
         },
         {
           "name": "vault_token_account",
-          "docs": [
-            "The vault's SPL token account, from which revenue will be transferred."
-          ],
           "writable": true
         },
         {
@@ -913,16 +883,10 @@
         },
         {
           "name": "provider_token_account",
-          "docs": [
-            "The liquidity provider's SPL token account, where withdrawn rewards will be deposited."
-          ],
           "writable": true
         },
         {
           "name": "vault_token_account",
-          "docs": [
-            "The vault's SPL token account, from which rewards will be transferred."
-          ],
           "writable": true
         },
         {
@@ -1214,7 +1178,7 @@
     {
       "code": 6025,
       "name": "ClaimRoundMismatchOrNotCompleted",
-      "msg": "Attempting to claim winnings for a round that is not completed or does not match PlayerBets round."
+      "msg": "Attempting to claim winnings for a round where the winning number is not available."
     },
     {
       "code": 6026,
@@ -1357,6 +1321,10 @@
             "type": {
               "option": "pubkey"
             }
+          },
+          {
+            "name": "last_completed_round",
+            "type": "u64"
           }
         ]
       }
