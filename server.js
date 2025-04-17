@@ -13,7 +13,7 @@ const { QUICKNODE_RPC, MONGO_URI, QUICKNODE_WSS } = require('./config');
 
 // --- Solana Initialization ---
 // !!! IMPORTANT: Ensure this PROGRAM_ID matches your newly deployed contract !!!
-const PROGRAM_ID = new PublicKey('32T21T93tobSziz7QSojRwsDiWawnr66ys2db8WbBioF');
+const PROGRAM_ID = new PublicKey('H4Vie9GaijzWN8sbJHZtdZKJKVioA22bknp8ExwxDVjK');
 const connection = new Connection(QUICKNODE_RPC, {
     wsEndpoint: QUICKNODE_WSS,
     commitment: 'confirmed'
@@ -82,83 +82,102 @@ app.get('/', (req, res) => {
 
 // Handle new Socket.IO connections
 io.on('connection', (socket) => {
-    console.log('a user connected:', socket.id);
-    socket.on('disconnect', () => {
-        console.log('user disconnected:', socket.id);
+    // <<< ДОБАВЛЕНО ЛОГИРОВАНИЕ >>>
+    console.log(`[Socket.IO] User CONNECTED: ${socket.id} from ${socket.handshake.address}. Total clients: ${io.engine.clientsCount}`);
+
+    socket.on('disconnect', (reason) => {
+        // <<< ДОБАВЛЕНО ЛОГИРОВАНИЕ >>>
+        console.log(`[Socket.IO] User DISCONNECTED: ${socket.id}. Reason: ${reason}. Total clients: ${io.engine.clientsCount}`);
     });
+
+    // <<< ДОБАВЛЕНО ЛОГИРОВАНИЕ ОШИБОК СОКЕТА >>>
+    socket.on('error', (error) => {
+        console.error(`[Socket.IO] Socket ERROR for ID ${socket.id}:`, error);
+    });
+
     // Client-specific event handlers can be added here
 });
+
+// <<< ДОБАВЛЕНО ЛОГИРОВАНИЕ ОШИБОК СЕРВЕРА >>>
+io.engine.on("connection_error", (err) => {
+    console.error("[Socket.IO Engine] Connection Error:");
+    console.error(`  Code: ${err.code}`);      // Например, 1
+    console.error(`  Message: ${err.message}`); // Например, "Session ID unknown"
+    console.error(`  Context: ${JSON.stringify(err.context)}`); // Дополнительные данные об ошибке
+});
+
 
 // Start the server and attach event listener
 server.listen(PORT, () => {
     console.log(`Server listening on *:${PORT}`);
-    console.log("Attaching event listener now...");
+    console.log("Attaching Solana event listener now..."); // Изменено для ясности
     listenToEvents();
 });
 
 
 // Main function to listen for program logs and process events
 async function listenToEvents() {
-    console.log(`Listening for Logs from program ${PROGRAM_ID.toString()}...`);
+    console.log(`[Solana Listener] Listening for Logs from program ${PROGRAM_ID.toString()}...`); // Изменено для ясности
 
     let idl;
     let borshCoder; // Объявляем здесь
 
     // <<< НАЧАЛО: Правильный блок для загрузки IDL и создания Coder >>>
     try {
-        console.log("[Debug] Attempting to require IDL './roulette_game.json'...");
+        console.log("[Solana Listener] Attempting to require IDL './roulette_game.json'..."); // Изменено для ясности
         idl = require('./roulette_game.json'); // Сначала ЗАГРУЖАЕМ IDL
-        console.log("[Debug] IDL required successfully. Attempting to create BorshCoder...");
+        console.log("[Solana Listener] IDL required successfully. Attempting to create BorshCoder..."); // Изменено для ясности
         // <<< ИСПРАВЛЕНИЕ: Создаем borshCoder ПОСЛЕ загрузки idl >>>
         borshCoder = new anchor.BorshCoder(idl);
-        console.log("[Debug] BorshCoder created successfully.");
+        console.log("[Solana Listener] BorshCoder created successfully."); // Изменено для ясности
     } catch (error) {
-        console.error("[FATAL] Failed to load IDL or create BorshCoder:", error);
+        console.error("[Solana Listener] [FATAL] Failed to load IDL or create BorshCoder:", error); // Изменено для ясности
         return; // Выходим, если ошибка
     }
     // <<< КОНЕЦ: Правильный блок >>>
 
     // Теперь можно безопасно использовать borshCoder дальше
     try {
-        console.log(`[Debug] Attempting to subscribe to logs for program ${PROGRAM_ID.toString()}...`);
+        console.log(`[Solana Listener] Attempting to subscribe to logs for program ${PROGRAM_ID.toString()}...`); // Изменено для ясности
         const subscriptionId = connection.onLogs(
             PROGRAM_ID,
             async (logsResult, context) => { // <<< НАЧАЛО КОЛЛБЭКА
-                // <<< УДАЛИ ЭТИ ДВЕ СТРОКИ (124 и 125) >>>
-                // console.log(`[onLogs Raw] Received logs for sig: ${signature}, err: ${err}, log count: ${logs?.length}`); // <<< УДАЛИТЬ
-                // if (logs) { // <<< УДАЛИТЬ
-                //     logs.forEach((log, index) => console.log(`[onLogs Raw Log ${index}] ${log.substring(0, 150)}...`)); // <<< УДАЛИТЬ
-                // } // <<< УДАЛИТЬ
-
                 // <<< ПОПЫТКА ДЕСТРУКТУРИЗАЦИИ >>>
                 const { signature, err, logs } = logsResult; // Переменные объявлены здесь
                 const { slot } = context;
                 // <<< КОНЕЦ ПОПЫТКИ >>>
 
-                // <<< ОСТАВЬ ЭТИ ЛОГИ (Они уже в правильном месте) >>>
-                console.log(`[onLogs Raw] Received logs for sig: ${signature}, err: ${err}, log count: ${logs?.length}`);
+                // <<< ЛОГИРОВАНИЕ RAW ДАННЫХ >>>
+                console.log(`\n--- [Solana Log Received] Signature: ${signature} | Slot: ${slot} | Error: ${err} ---`);
                 if (logs) {
-                    logs.forEach((log, index) => console.log(`[onLogs Raw Log ${index}] ${log.substring(0, 150)}...`));
+                    logs.forEach((log, index) => console.log(`  [Raw Log ${index}] ${log.substring(0, 200)}...`));
+                } else {
+                    console.log("  [Raw Log] No logs array received.");
                 }
-                // <<< КОНЕЦ ПРАВИЛЬНЫХ ЛОГОВ >>>
+                // <<< КОНЕЦ ЛОГИРОВАНИЯ RAW ДАННЫХ >>>
 
 
                 if (err) {
-                    console.error(`[onLogs] Error in logs subscription for signature ${signature}:`, err);
+                    console.error(`[Solana Listener] Error in logs subscription payload for signature ${signature}:`, err); // Изменено для ясности
                     return;
                 }
+                 // Добавляем проверку на null или undefined для logs
+                 if (!logs) {
+                     console.warn(`[Solana Listener] Received log payload without 'logs' array for signature ${signature}. Skipping.`); // Изменено для ясности
+                     return;
+                 }
                 // Предотвращаем повторную обработку одной и той же транзакции
                 if (processingSignatures.has(signature)) {
-                    // console.log(`[onLogs] Signature ${signature} already being processed, skipping.`);
+                    console.log(`[Solana Listener] Signature ${signature} already being processed, skipping.`); // Изменено для ясности
                     return;
                 }
                 processingSignatures.add(signature);
-                console.log(`[onLogs] Processing signature: ${signature} at slot ${slot}`);
+                console.log(`[Solana Listener] START Processing signature: ${signature}`); // Изменено для ясности
 
                 try {
                     // --- Флаги для предотвращения дублирования обработки событий в одной транзакции ---
                     let isBetPlacedProcessed = false;
-                    let isRandomGeneratedProcessed = false;
+                    let isRandomGeneratedProcessed = false; // Переименовано для ясности
                     let isWinningsClaimedProcessed = false;
                     let isBetsClosedProcessed = false;
                     let isRoundStartedProcessed = false;
@@ -166,18 +185,28 @@ async function listenToEvents() {
                     for (const log of logs) {
                         const logPrefix = "Program data: ";
                         if (log.startsWith(logPrefix)) {
+                            const base64Data = log.substring(logPrefix.length);
+                            let event; // Объявляем event здесь
                             try {
-                                const base64Data = log.substring(logPrefix.length);
-                                console.log(`[Decode Attempt] Trying to decode: ${base64Data.substring(0, 50)}...`); // <<< ДОБАВЬ
+                                // <<< ДОБАВЛЕНО ЛОГИРОВАНИЕ ДЕКОДИРОВАНИЯ >>>
+                                console.log(`  [Event Decode] Attempting for signature ${signature}: ${base64Data.substring(0, 50)}...`);
                                 const eventDataBuffer = anchor.utils.bytes.base64.decode(base64Data);
-                                const event = borshCoder.events.decode(eventDataBuffer);
-                                console.log(`[Decode Result] Decoded event name: ${event?.name}`); // <<< ДОБАВЬ
+                                event = borshCoder.events.decode(eventDataBuffer); // Присваиваем значение
+                                console.log(`  [Event Decode] Success for signature ${signature}. Event Name: ${event?.name || 'NULL'}`);
+                                // <<< КОНЕЦ ЛОГИРОВАНИЯ ДЕКОДИРОВАНИЯ >>>
 
-                                if (!event) continue;
+                            } catch (decodeError) {
+                                // <<< УЛУЧШЕНО ЛОГИРОВАНИЕ ОШИБКИ ДЕКОДИРОВАНИЯ >>>
+                                console.error(`  [Event Decode] FAILED for signature ${signature}:`, decodeError.message);
+                                console.error(`  [Event Decode] Failed log content: ${log}`);
+                                continue; // Пропускаем этот лог, если не смогли декодировать
+                            }
+
+                                if (!event) continue; // Пропускаем, если декодирование вернуло null
 
                                 // --- BetPlaced Event Handler ---
                                 if (event.name === 'BetPlaced' && !isBetPlacedProcessed) {
-                                    console.log(`[BetPlaced] Processing event for signature ${signature}...`);
+                                    console.log(`[Event Handler - BetPlaced] START processing for signature ${signature}...`); // <<< ЛОГ НАЧАЛА
                                     const { player, token_mint, round, bet, timestamp } = event.data;
 
                                     const betDataToSave = {
@@ -185,43 +214,43 @@ async function listenToEvents() {
                                         tokenMint: token_mint.toBase58(),
                                         round: Number(round),
                                         betAmount: bet.amount.toString(),
-                                        betType: bet.bet_type,
+                                        betType: bet.bet_type, // Сохраняем числовое значение
                                         betNumbers: bet.numbers,
                                         timestamp: new Date(Number(timestamp) * 1000),
                                         signature: signature,
                                     };
 
                                     try {
+                                        // Использование findOneAndUpdate с upsert: true уже обрабатывает случай отсутствия
                                         await BetModel.findOneAndUpdate(
-                                            {
-                                                signature: signature,
-                                            },
+                                            { signature: signature }, // Ищем по уникальной подписи
                                             betDataToSave,
-                                            { upsert: true, new: true }
+                                            { upsert: true, new: true } // Создать, если нет, вернуть новый документ
                                         );
+                                        console.log(`[Event Handler - BetPlaced] DB Upsert OK for signature ${signature}.`); // <<< ЛОГ УСПЕХА DB
 
                                         const eventForSocket = {
                                             player: player.toBase58(),
                                             token_mint: token_mint.toBase58(),
-                                            round: round.toString(),
-                                            timestamp: Number(timestamp),
+                                            round: round.toString(), // Строка для совместимости?
+                                            timestamp: Number(timestamp), // Секунды
                                             bet: {
                                                 amount: bet.amount.toString(),
-                                                bet_type: bet.bet_type,
+                                                bet_type: bet.bet_type, // Число для сокета
                                                 numbers: bet.numbers
                                             },
                                             signature: signature
                                         };
                                         io.emit('newBet', eventForSocket);
-                                        console.log(`[BetPlaced] Emitted 'newBet' event via Socket.IO.`);
+                                        console.log(`[Event Handler - BetPlaced] Emitted 'newBet' via Socket.IO. Sig: ${signature}.`); // <<< ЛОГ УСПЕХА EMIT
                                         isBetPlacedProcessed = true;
                                     } catch (dbError) {
-                                        console.error(`[BetPlaced] Error saving/upserting bet to DB for signature ${signature}:`, dbError);
+                                        console.error(`[Event Handler - BetPlaced] DB ERROR for signature ${signature}:`, dbError); // <<< ЛОГ ОШИБКИ DB
                                     }
                                 }
                                 // --- RoundStarted Event Handler ---
                                 else if (event.name === 'RoundStarted' && !isRoundStartedProcessed) {
-                                    console.log(`[RoundStarted] Processing event for signature ${signature}...`);
+                                    console.log(`[Event Handler - RoundStarted] START processing for signature ${signature}...`); // <<< ЛОГ НАЧАЛА
                                     const { round, starter, start_time } = event.data;
 
                                     const eventForSocket = {
@@ -231,12 +260,12 @@ async function listenToEvents() {
                                         signature: signature
                                     };
                                     io.emit('roundStarted', eventForSocket);
-                                    console.log(`[RoundStarted] Emitted 'roundStarted' (Round: ${eventForSocket.round}) event via Socket.IO.`);
+                                    console.log(`[Event Handler - RoundStarted] Emitted 'roundStarted' (Round: ${eventForSocket.round}). Sig: ${signature}.`); // <<< ЛОГ УСПЕХА EMIT
                                     isRoundStartedProcessed = true;
                                 }
                                 // --- BetsClosed Event Handler ---
                                 else if (event.name === 'BetsClosed' && !isBetsClosedProcessed) {
-                                    console.log(`[BetsClosed] Processing event for signature ${signature}...`);
+                                     console.log(`[Event Handler - BetsClosed] START processing for signature ${signature}...`); // <<< ЛОГ НАЧАЛА
                                     const { round, closer, close_time } = event.data;
 
                                     const eventForSocket = {
@@ -246,202 +275,162 @@ async function listenToEvents() {
                                         signature: signature
                                     };
                                     io.emit('betsClosed', eventForSocket);
-                                    console.log(`[BetsClosed] Emitted 'betsClosed' (Round: ${eventForSocket.round}) event via Socket.IO.`);
+                                    console.log(`[Event Handler - BetsClosed] Emitted 'betsClosed' (Round: ${eventForSocket.round}). Sig: ${signature}.`); // <<< ЛОГ УСПЕХА EMIT
                                     isBetsClosedProcessed = true;
                                 }
                                 // --- RandomGenerated Event Handler (ИЗМЕНЕНИЯ) ---
                                 else if (event.name === 'RandomGenerated' && !isRandomGeneratedProcessed) {
-                                    console.log(`[RandomGenerated] Processing event for signature ${signature}...`);
+                                    console.log(`[Event Handler - RandomGenerated] START processing for signature ${signature}...`); // <<< ЛОГ НАЧАЛА
                                     const { round, initiator, winning_number, generation_time, slot, last_bettor } = event.data;
                                     const roundNum = Number(round);
                                     const winningNum = Number(winning_number);
+                                    const generationTimeMs = Number(generation_time) * 1000; // Время генерации
 
-                                    // --- Получение всех ставок раунда из БД ---
-                                    const betsForRound = await BetModel.find({ round: roundNum }).lean();
-                                    console.log(`[RandomGenerated] Found ${betsForRound.length} bet records in DB for round ${roundNum}. Calculating results...`);
+                                    try {
+                                        // --- Получение всех ставок раунда из БД ---
+                                        const betsForRound = await BetModel.find({ round: roundNum }).lean();
+                                        console.log(`[Event Handler - RandomGenerated] Found ${betsForRound.length} bets in DB for round ${roundNum}. Sig: ${signature}.`); // <<< ЛОГ DB FIND
 
-                                    const detailedBetResults = []; // Массив для отправки на фронтенд
-                                    const playerPayouts = new Map(); // Map<playerAddress, { totalPayout: BN, tokenMint: string }> (для RoundPayoutModel)
-                                    const payoutsToSave = []; // Для RoundPayoutModel
+                                        const playerPayouts = new Map(); // Map<playerAddress, { totalPayout: BN, tokenMint: string }>
+                                        const payoutsToSave = []; // Для RoundPayoutModel
 
-                                    if (betsForRound.length > 0) {
-                                        for (const betRecord of betsForRound) {
-                                            // Проверка betAmount
-                                            if (typeof betRecord.betAmount !== 'string' || betRecord.betAmount === null) {
-                                                console.warn(`[RandomGenerated] Skipping bet record with invalid betAmount for player ${betRecord.player}, round ${roundNum}. Amount:`, betRecord.betAmount);
-                                                continue;
-                                            }
-                                            let betAmountBN;
-                                            try { betAmountBN = new BN(betRecord.betAmount); } catch (bnError) { console.error(`[RandomGenerated] Error converting betAmount '${betRecord.betAmount}' to BN. Skipping.`, bnError); continue; }
-
-                                            const isWinningBet = isBetWinner(betRecord.betType, betRecord.betNumbers || [], winningNum);
-                                            let payoutAmountBN = new BN(0);
-                                            let multiplier = new BN(0); // Инициализируем множитель
-
-                                            if (isWinningBet) {
-                                                multiplier = calculatePayoutMultiplier(betRecord.betType); // Рассчитываем множитель
-                                                payoutAmountBN = betAmountBN.mul(multiplier); // Рассчитываем выигрыш по ставке
-
-                                                // Обновляем общие выплаты для RoundPayoutModel (логика остается)
-                                                const playerAddress = betRecord.player;
-                                                const tokenMint = betRecord.tokenMint;
-                                                const currentData = playerPayouts.get(playerAddress) || { totalPayout: new BN(0), tokenMint: tokenMint };
-                                                if (currentData.tokenMint !== tokenMint) {
-                                                     console.error(`[FATAL] Mismatched mints for player ${playerAddress} in round ${roundNum}. Skipping payout calculation.`);
-                                                     playerPayouts.delete(playerAddress); // Удаляем игрока, чтобы избежать проблем
-                                                     continue; // Пропускаем эту ставку для playerPayouts
+                                        if (betsForRound.length > 0) {
+                                            let roundTokenMint = null; // Определим минт из первой валидной ставки
+                                            for (const betRecord of betsForRound) {
+                                                if (!roundTokenMint && betRecord.tokenMint) {
+                                                    roundTokenMint = betRecord.tokenMint.toString();
                                                 }
-                                                playerPayouts.set(playerAddress, {
-                                                    totalPayout: currentData.totalPayout.add(payoutAmountBN),
-                                                    tokenMint: tokenMint
-                                                });
+                                                // ... (Проверки и расчеты выигрышей как раньше) ...
+                                                if (typeof betRecord.betAmount !== 'string' || betRecord.betAmount === null) continue;
+                                                let betAmountBN;
+                                                try { betAmountBN = new BN(betRecord.betAmount); } catch { continue; }
+
+                                                const isWinningBet = isBetWinner(betRecord.betType, betRecord.betNumbers || [], winningNum);
+                                                if (isWinningBet) {
+                                                    const multiplier = calculatePayoutMultiplier(betRecord.betType);
+                                                    const payoutAmountBN = betAmountBN.mul(multiplier);
+
+                                                    const playerAddress = betRecord.player; // Уже строка из БД
+                                                    const tokenMint = betRecord.tokenMint; // Уже строка из БД
+                                                    const currentData = playerPayouts.get(playerAddress) || { totalPayout: new BN(0), tokenMint: tokenMint };
+
+                                                    if (currentData.tokenMint !== tokenMint) {
+                                                         console.error(`[Event Handler - RandomGenerated] [FATAL] Mismatched mints for player ${playerAddress} in round ${roundNum}. Skipping payout calculation.`);
+                                                         playerPayouts.delete(playerAddress);
+                                                         continue;
+                                                    }
+                                                    playerPayouts.set(playerAddress, {
+                                                        totalPayout: currentData.totalPayout.add(payoutAmountBN),
+                                                        tokenMint: tokenMint
+                                                    });
+                                                }
                                             }
+                                        } else {
+                                            console.log(`[Event Handler - RandomGenerated] No bets found for round ${roundNum}. Sig: ${signature}.`);
+                                        }
+                                        // --- КОНЕЦ расчета выигрышей ---
 
-                                            // Формируем объект для отправки на фронтенд
-                                            detailedBetResults.push({
-                                                player: betRecord.player.toString(),
+                                        // --- Подготовка данных для сохранения RoundPayoutModel ---
+                                        let tokenMintForRound = null; // Переопределяем здесь, на случай если ставок не было
+                                        for (const [player, data] of playerPayouts.entries()) {
+                                            payoutsToSave.push({ address: player, amount: data.totalPayout.toString() });
+                                             // Устанавливаем tokenMintForRound из первой найденной выплаты
+                                             if (!tokenMintForRound) tokenMintForRound = data.tokenMint;
+                                        }
+                                        // Если ставок не было, tokenMintForRound останется null
+
+                                        // --- Сохранение результатов раунда в RoundPayoutModel ---
+                                        await RoundPayoutModel.findOneAndUpdate(
+                                            { round: roundNum },
+                                            {
                                                 round: roundNum,
-                                                tokenMint: betRecord.tokenMint.toString(),
-                                                betType: mapBetTypeEnumToString(betRecord.betType), // Строковое представление
-                                                numbers: betRecord.betNumbers || [],
-                                                amountBet: betRecord.betAmount, // Сумма ставки (строка)
-                                                isWinning: isWinningBet,
-                                                payoutAmount: payoutAmountBN.toString(), // Сумма выигрыша по этой ставке (строка)
-                                                signature: betRecord.signature,
-                                            });
-                                        }
-                                        console.log(`[RandomGenerated] Calculated detailed results for ${detailedBetResults.length} bets.`);
-                                    } else {
-                                        console.log(`[RandomGenerated] No bets found for round ${roundNum}. No results calculated.`);
+                                                winningNumber: winningNum,
+                                                payouts: payoutsToSave,
+                                                // Можно добавить generation_time и initiator, если нужно
+                                                generationTimestamp: new Date(generationTimeMs),
+                                                initiator: initiator.toBase58()
+                                            },
+                                            { upsert: true, new: true, setDefaultsOnInsert: true }
+                                        );
+                                        console.log(`[Event Handler - RandomGenerated] Saved/Updated RoundPayout for round ${roundNum}. Payouts: ${payoutsToSave.length}. Sig: ${signature}.`); // <<< ЛОГ УСПЕХА DB
+
+                                        // --- Отправка события 'winningsCalculated' по WebSocket ---
+                                        const eventForSocket = {
+                                            round: roundNum,
+                                            winningNumber: winningNum,
+                                            generation_time: Number(generation_time), // Секунды, как в контракте
+                                            initiator: initiator.toBase58(),
+                                            signature: signature
+                                            // НЕ отправляем массив ставок здесь
+                                        };
+                                        io.emit('winningsCalculated', eventForSocket);
+                                        console.log(`[Event Handler - RandomGenerated] Emitted 'winningsCalculated' (Round: ${roundNum}, Num: ${winningNum}). Sig: ${signature}.`); // <<< ЛОГ УСПЕХА EMIT
+
+                                        isRandomGeneratedProcessed = true; // Помечаем, что обработали
+                                    } catch (payoutDbError) {
+                                        console.error(`[Event Handler - RandomGenerated] DB/Processing ERROR for round ${roundNum}, Sig ${signature}:`, payoutDbError); // <<< ЛОГ ОШИБКИ
                                     }
-                                    // --- КОНЕЦ расчета выигрышей ---
-
-                                    // --- Подготовка данных для сохранения RoundPayoutModel (без изменений) ---
-                                    let tokenMintForRound = null;
-                                    for (const [player, data] of playerPayouts.entries()) {
-                                        payoutsToSave.push({ address: player, amount: data.totalPayout.toString() });
-                                        if (!tokenMintForRound) tokenMintForRound = data.tokenMint;
-                                    }
-
-                                    // --- Сохранение результатов раунда в RoundPayoutModel (без изменений) ---
-                                    // Сохраняем, если были победители ИЛИ если ставок не было вообще (чтобы записать winningNumber)
-                                    if (payoutsToSave.length > 0 || betsForRound.length === 0) {
-                                        try {
-                                            await RoundPayoutModel.findOneAndUpdate(
-                                                { round: roundNum },
-                                                {
-                                                    round: roundNum,
-                                                    winningNumber: winningNum,
-                                                    payouts: payoutsToSave, // Сохраняем общий payout для истории/проверки
-                                                },
-                                                { upsert: true, new: true, setDefaultsOnInsert: true }
-                                            );
-                                            console.log(`[RandomGenerated] Saved/Updated RoundPayout data for round ${roundNum}. Payouts array length: ${payoutsToSave.length}`);
-                                        } catch (payoutDbError) {
-                                            console.error(`[RandomGenerated] Error saving RoundPayout data for round ${roundNum}:`, payoutDbError);
-                                        }
-                                    } else {
-                                        console.log(`[RandomGenerated] No winning payouts to save for round ${roundNum}, but bets existed. Still saving round info.`);
-                                         // Опционально: сохранить запись RoundPayout даже без победителей, если были ставки
-                                        try {
-                                            await RoundPayoutModel.findOneAndUpdate(
-                                                { round: roundNum },
-                                                {
-                                                    round: roundNum,
-                                                    winningNumber: winningNum,
-                                                    payouts: [], // Пустой массив, т.к. победителей не было
-                                                },
-                                                { upsert: true, new: true, setDefaultsOnInsert: true }
-                                            );
-                                             console.log(`[RandomGenerated] Saved RoundPayout data for round ${roundNum} with empty payouts array.`);
-                                        } catch (payoutDbError) {
-                                            console.error(`[RandomGenerated] Error saving RoundPayout data (no winners) for round ${roundNum}:`, payoutDbError);
-                                        }
-                                    }
-                                    // --- КОНЕЦ Сохранения ---
-
-                                    // --- Отправка по WebSocket (НОВЫЙ СПОСОБ) ---
-                                    // Отправляем массив с деталями всех ставок раунда
-                                    io.emit('roundBetsResult', detailedBetResults);
-                                    console.log(`%c[WebSocket] Emitted 'roundBetsResult' event for round ${roundNum} with ${detailedBetResults.length} bet details.`, 'color: blue; font-weight: bold;');
-                                    // --- КОНЕЦ отправки по WebSocket ---
-
-                                    isRandomGeneratedProcessed = true; // Помечаем, что обработали
                                 }
                                 // --- WinningsClaimed Event Handler ---
                                 else if (event.name === 'WinningsClaimed' && !isWinningsClaimedProcessed) {
-                                    console.log(`[WinningsClaimed] Processing event for signature ${signature}...`);
+                                     console.log(`[Event Handler - WinningsClaimed] START processing for signature ${signature}...`); // <<< ЛОГ НАЧАЛА
                                     const { round, player, token_mint, amount, timestamp } = event.data;
                                     const roundNum = Number(round);
                                     const playerAddr = player.toBase58();
                                     const claimTimestamp = Number(timestamp) * 1000;
 
-                                    // Сохраняем запись о клейме в БД
                                     try {
+                                        // Сохраняем запись о клейме в БД
                                         await ClaimRecordModel.findOneAndUpdate(
-                                            { player: playerAddr, round: roundNum },
+                                            { player: playerAddr, round: roundNum }, // Ключ для поиска
                                             {
                                                 player: playerAddr,
                                                 round: roundNum,
                                                 claimSignature: signature, // Сохраняем подпись клейма
                                                 claimedTimestamp: new Date(claimTimestamp),
-                                                tokenMint: token_mint.toBase58(), // Можно добавить минт и сумму, если нужно
+                                                tokenMint: token_mint.toBase58(),
                                                 amountClaimed: amount.toString(),
                                             },
-                                            { upsert: true, new: true } // Создать, если нет, или обновить
+                                            { upsert: true, new: true } // Создать или обновить
                                         );
-                                        console.log(`[WinningsClaimed] Saved/Updated ClaimRecord for player ${playerAddr}, round ${roundNum}.`);
-                                    } catch (dbError) {
-                                        // Обработка ошибки дубликата подписи, если нужно (хотя findOneAndUpdate с upsert должен справиться)
-                                        if (dbError.code === 11000 && dbError.keyPattern && dbError.keyPattern.claimSignature) {
-                                             console.warn(`[WinningsClaimed] Claim signature ${signature} already exists. Ignoring DB update.`);
-                                        } else if (dbError.code === 11000 && dbError.keyPattern && dbError.keyPattern['player'] && dbError.keyPattern['round']) {
-                                             console.warn(`[WinningsClaimed] Claim record for player ${playerAddr}, round ${roundNum} already exists. Updating timestamp/signature potentially.`);
-                                             // Можно добавить логику обновления, если нужно
-                                        }
-                                         else {
-                                             console.error(`[WinningsClaimed] Error saving ClaimRecord for player ${playerAddr}, round ${roundNum}:`, dbError);
-                                         }
-                                    }
+                                        console.log(`[Event Handler - WinningsClaimed] DB Upsert OK for player ${playerAddr}, round ${roundNum}. Sig: ${signature}.`); // <<< ЛОГ УСПЕХА DB
 
-                                    // Отправляем событие по WebSocket (оставляем, т.к. может быть полезно для UI)
-                                    const eventForSocket = {
-                                        round: roundNum,
-                                        player: playerAddr,
-                                        tokenMint: token_mint.toBase58(),
-                                        amount: amount.toString(),
-                                        timestamp: claimTimestamp, // В миллисекундах
-                                        claimSignature: signature
-                                    };
-                                    io.emit('winningsClaimed', eventForSocket);
-                                    console.log(`[WinningsClaimed] Emitted 'winningsClaimed' for player ${eventForSocket.player} round ${eventForSocket.round}.`);
-                                    isWinningsClaimedProcessed = true;
+                                        // Отправляем событие по WebSocket
+                                        const eventForSocket = {
+                                            round: roundNum,
+                                            player: playerAddr,
+                                            tokenMint: token_mint.toBase58(),
+                                            amount: amount.toString(),
+                                            timestamp: claimTimestamp, // В миллисекундах
+                                            claimSignature: signature
+                                        };
+                                        io.emit('winningsClaimed', eventForSocket);
+                                        console.log(`[Event Handler - WinningsClaimed] Emitted 'winningsClaimed' for player ${playerAddr}, round ${roundNum}. Sig: ${signature}.`); // <<< ЛОГ УСПЕХА EMIT
+                                        isWinningsClaimedProcessed = true;
+                                    } catch (dbError) {
+                                        console.error(`[Event Handler - WinningsClaimed] DB ERROR for player ${playerAddr}, round ${roundNum}, Sig ${signature}:`, dbError); // <<< ЛОГ ОШИБКИ DB
+                                    }
                                 }
 
-                            } catch (decodeError) {
-                                console.error(`[EventDecode] Error decoding log for signature ${signature}:`, decodeError);
-                                console.error(`[EventDecode] Failed log content:`, log);
-                            }
-                        } // End if log.startsWith(logPrefix)
-                    } // End for loop over logs
+                            } // End if log.startsWith(logPrefix)
+                        } // End for loop over logs
 
                 } catch (processingError) {
-                    console.error(`[onLogs] Error processing signature ${signature}:`, processingError);
+                    console.error(`[Solana Listener] Outer processing ERROR for signature ${signature}:`, processingError); // <<< ЛОГ ВНЕШНЕЙ ОШИБКИ
                 } finally {
-                    // Убедимся, что сигнатура удаляется, даже если была ошибка при обработке
                     processingSignatures.delete(signature);
-                    // console.log(`[onLogs] Finished processing signature: ${signature}`);
+                    console.log(`[Solana Listener] END Processing signature: ${signature}`); // <<< ЛОГ ОКОНЧАНИЯ
+                    console.log(`--- [END Solana Log Processing] Signature: ${signature} ---`); // Добавим разделитель
                 }
 
-            },
+            }, // <<< КОНЕЦ КОЛЛБЭКА onLogs
             'confirmed' // Используем 'confirmed' или 'finalized' в зависимости от требований
         );
 
-        console.log(`[onLogs] Successfully subscribed to logs. Subscription ID: ${subscriptionId}`); // Этот лог мы ищем
+        console.log(`[Solana Listener] Successfully subscribed to logs. Subscription ID: ${subscriptionId}`);
 
     } catch (error) {
-        console.error("[onLogs] Failed to subscribe to logs:", error);
-        // Здесь можно добавить логику переподключения или оповещения
+        console.error("[Solana Listener] [FATAL] Failed to subscribe to logs:", error);
     }
 }
 
@@ -450,52 +439,54 @@ async function listenToEvents() {
 // Endpoint to fetch historical bets for a specific round
 app.get('/api/bets', async (req, res) => {
     const roundQuery = req.query.round;
-    console.log(`[API Bets] Request for round: ${roundQuery}`);
+    // <<< Добавляем логирование запроса >>>
+    console.log(`[API /api/bets] Request received. Round: ${roundQuery}`);
 
     if (!roundQuery || isNaN(parseInt(roundQuery))) {
+        console.warn(`[API /api/bets] Invalid round number: ${roundQuery}`); // <<< Лог ошибки валидации
         return res.status(400).json({ error: 'Valid round number required' });
     }
     const roundNumber = parseInt(roundQuery);
 
     try {
-        // <<< НАЧАЛО ИЗМЕНЕНИЙ: Добавляем фильтр по gameSessionPubkey >>>
         const betsFromDb = await BetModel.find({
             round: roundNumber,
         }).sort({ timestamp: -1 }).lean();
-        // <<< КОНЕЦ ИЗМЕНЕНИЙ: Добавляем фильтр по gameSessionPubkey >>>
 
         if (!betsFromDb || betsFromDb.length === 0) {
-            console.log(`[API Bets] No bets found for round ${roundNumber}.`);
-            return res.json([]);
+            console.log(`[API /api/bets] No bets found for round ${roundNumber}.`);
+            return res.json([]); // Возвращаем пустой массив, как и было
         }
-        console.log(`[API Bets] Found ${betsFromDb.length} bet records for round ${roundNumber}.`);
+        console.log(`[API /api/bets] Found ${betsFromDb.length} bet records for round ${roundNumber}.`);
 
-        // Преобразование данных для ответа остается прежним
+        // Преобразование данных для ответа
         const responseData = betsFromDb.map(bet => ({
-            player: bet.player.toString(),
+            player: bet.player, // Уже строка из БД
             round: bet.round,
-            tokenMint: bet.tokenMint.toString(),
+            tokenMint: bet.tokenMint, // Уже строка из БД
             timestamp: new Date(bet.timestamp).getTime(),
-            amount: bet.betAmount,
-            betType: mapBetTypeEnumToString(bet.betType),
+            amount: bet.betAmount, // Строка lamports
+            betType: mapBetTypeEnumToString(bet.betType), // Преобразуем в строку
             numbers: bet.betNumbers || [],
             signature: bet.signature
         }));
 
-        console.log(`[API Bets] Sending flat list of bets for round ${roundNumber}.`);
+        console.log(`[API /api/bets] Sending ${responseData.length} bets for round ${roundNumber}.`); // <<< Лог ответа
         res.json(responseData);
 
     } catch (error) {
-        console.error(`[API Bets] Error fetching bets for round ${roundNumber}:`, error);
+        console.error(`[API /api/bets] Error fetching bets for round ${roundNumber}:`, error); // <<< Лог ошибки
         res.status(500).json({ error: 'Internal server error while fetching bets' });
     }
 });
 
 app.get('/api/round-payouts', async (req, res) => {
     const roundQuery = req.query.round;
-    console.log(`[API Payouts] Request for round: ${roundQuery}`);
+    // <<< Добавляем логирование запроса >>>
+    console.log(`[API /api/round-payouts] Request received. Round: ${roundQuery}`);
 
     if (!roundQuery || isNaN(parseInt(roundQuery))) {
+        console.warn(`[API /api/round-payouts] Invalid round number: ${roundQuery}`); // <<< Лог ошибки валидации
         return res.status(400).json({ error: 'Valid round number required' });
     }
     const roundNumber = parseInt(roundQuery);
@@ -503,194 +494,98 @@ app.get('/api/round-payouts', async (req, res) => {
     try {
         const roundPayoutData = await RoundPayoutModel.findOne({
             round: roundNumber,
-        }).lean(); // .lean() для получения простого JS объекта
+        }).lean();
 
         if (!roundPayoutData) {
-            console.log(`[API Payouts] No payout data found for round ${roundNumber}.`);
-            // Возвращаем 404 или пустой объект/массив, в зависимости от того, как фронтенд будет это обрабатывать
+            console.log(`[API /api/round-payouts] No payout data found for round ${roundNumber}. Sending 404.`); // <<< Лог ответа 404
             return res.status(404).json({ error: 'Payout data not found for this round' });
-            // Или: return res.json({ winningNumber: null, payouts: [] });
         }
 
-        console.log(`[API Payouts] Found payout data for round ${roundNumber}. Winners: ${roundPayoutData.payouts?.length || 0}.`);
-        // Возвращаем только нужные поля (или весь документ, если удобно)
+        console.log(`[API /api/round-payouts] Found payout data for round ${roundNumber}. Winners: ${roundPayoutData.payouts?.length || 0}.`); // <<< Лог найденных данных
         res.json({
             round: roundPayoutData.round,
             winningNumber: roundPayoutData.winningNumber,
-            payouts: roundPayoutData.payouts || [], // Массив { address, amount }
-            createdAt: roundPayoutData.createdAt // Полезно знать, когда были рассчитаны выплаты
+            payouts: roundPayoutData.payouts || [],
+            createdAt: roundPayoutData.createdAt,
+            // Добавим данные из события, если они есть
+            generationTimestamp: roundPayoutData.generationTimestamp,
+            initiator: roundPayoutData.initiator,
         });
 
     } catch (error) {
-        console.error(`[API Payouts] Error fetching payout data for round ${roundNumber}:`, error);
+        console.error(`[API /api/round-payouts] Error fetching payout data for round ${roundNumber}:`, error); // <<< Лог ошибки
         res.status(500).json({ error: 'Internal server error while fetching payout data' });
     }
 });
 
 // --- НОВЫЙ ЭНДПОИНТ: Получить ВСЕ ставки игрока за раунд с метками выигрыша ---
-app.get('/api/player-round-bets', async (req, res) => { // Переименовал для ясности
+app.get('/api/player-round-bets', async (req, res) => {
     const { player, round } = req.query;
-    console.log(`[API PlayerBets] Request for player: ${player}, round: ${round}`);
+    // <<< Добавляем логирование запроса >>>
+    console.log(`[API /api/player-round-bets] Request received. Player: ${player}, Round: ${round}`);
 
     // Валидация входных данных
     if (!player || !round || isNaN(parseInt(round))) {
+         console.warn(`[API /api/player-round-bets] Invalid input. Player: ${player}, Round: ${round}`); // <<< Лог ошибки валидации
         return res.status(400).json({ error: 'Valid player public key and round number required' });
     }
     try {
-        new PublicKey(player); // Проверяем, валидный ли pubkey
+        new PublicKey(player);
     } catch (e) {
+         console.warn(`[API /api/player-round-bets] Invalid player public key format: ${player}`); // <<< Лог ошибки валидации
         return res.status(400).json({ error: 'Invalid player public key format' });
     }
     const roundNumber = parseInt(round);
     const playerPubkeyStr = player;
 
     try {
-        // 1. Проверяем, был ли уже забран выигрыш за этот раунд (для информации)
+        // 1. Проверяем, был ли уже забран выигрыш за этот раунд
         const existingClaim = await ClaimRecordModel.findOne({ player: playerPubkeyStr, round: roundNumber }).lean();
-        const alreadyClaimed = !!existingClaim; // true, если запись есть, иначе false
+        const alreadyClaimed = !!existingClaim;
+        console.log(`[API /api/player-round-bets] Already claimed status for player ${playerPubkeyStr}, round ${roundNumber}: ${alreadyClaimed}`); // <<< Лог статуса клейма
 
         // 2. Получаем информацию о раунде (выигрышное число)
-        // Нам нужно winningNumber, даже если уже забрано, чтобы пометить ставки правильно
         const roundPayoutData = await RoundPayoutModel.findOne({ round: roundNumber }).lean();
-        let winningNum = null; // Изначально null
+        let winningNum = null;
         if (roundPayoutData && roundPayoutData.winningNumber !== undefined && roundPayoutData.winningNumber !== null) {
             winningNum = roundPayoutData.winningNumber;
+             console.log(`[API /api/player-round-bets] Winning number for round ${roundNumber}: ${winningNum}`); // <<< Лог выигрышного числа
         } else {
-             // Если winningNumber еще нет, значит раунд не завершен.
-             // Мы все равно можем вернуть ставки, но isWinning будет всегда false.
-             console.log(`[API PlayerBets] Winning number not found for round ${roundNumber}. Bets won't be marked as winning yet.`);
+             console.log(`[API /api/player-round-bets] Winning number not found yet for round ${roundNumber}.`); // <<< Лог отсутствия числа
         }
-
 
         // 3. Получаем все ставки этого игрока за этот раунд
         const playerBetsInRound = await BetModel.find({ player: playerPubkeyStr, round: roundNumber })
-                                        .sort({ timestamp: 1 }) // Сортируем по времени ставки (опционально)
+                                        .sort({ timestamp: 1 })
                                         .lean();
 
         if (!playerBetsInRound || playerBetsInRound.length === 0) {
-            console.log(`[API PlayerBets] No bets found for player ${playerPubkeyStr} in round ${roundNumber}.`);
-            // Возвращаем пустой массив и статус claimed
+            console.log(`[API /api/player-round-bets] No bets found for player ${playerPubkeyStr} in round ${roundNumber}.`); // <<< Лог отсутствия ставок
             return res.json({ bets: [], alreadyClaimed });
         }
+         console.log(`[API /api/player-round-bets] Found ${playerBetsInRound.length} bets for player ${playerPubkeyStr} in round ${roundNumber}. Formatting...`); // <<< Лог количества ставок
 
-        // 4. Форматируем результат для КАЖДОЙ ставки
+        // 4. Форматируем результат
         const allPlayerBetsDetails = [];
         for (const betRecord of playerBetsInRound) {
-             if (typeof betRecord.betAmount !== 'string' || betRecord.betAmount === null) continue; // Пропуск некорректных
+             // ... (расчеты isWinningBet и payoutAmountBN как раньше) ...
+             if (typeof betRecord.betAmount !== 'string' || betRecord.betAmount === null) continue;
              let betAmountBN;
              try { betAmountBN = new BN(betRecord.betAmount); } catch { continue; }
 
-             // Определяем выигрыш, только если winningNum известно
              const isWinningBet = (winningNum !== null)
                                   ? isBetWinner(betRecord.betType, betRecord.betNumbers || [], winningNum)
-                                  : false; // Если раунд не завершен, ставка не выигрышная
+                                  : false;
 
             let payoutAmountBN = new BN(0);
-            if (isWinningBet) { // Рассчитываем payout только если ставка выигрышная
+            if (isWinningBet) {
                 const multiplier = calculatePayoutMultiplier(betRecord.betType);
                 payoutAmountBN = betAmountBN.mul(multiplier);
             }
 
             allPlayerBetsDetails.push({
                 round: roundNumber,
-                tokenMint: betRecord.tokenMint.toString(),
-                betType: mapBetTypeEnumToString(betRecord.betType),
-                numbers: betRecord.betNumbers || [],
-                amountBet: betRecord.betAmount, // Сумма ставки (строка lamports)
-                isWinning: isWinningBet, // true / false
-                payoutAmount: payoutAmountBN.toString(), // Сумма выигрыша (строка lamports, "0" если не выиграла)
-                signature: betRecord.signature,
-                timestamp: new Date(betRecord.timestamp).getTime(), // Добавим timestamp ставки
-            });
-        }
-
-        console.log(`[API PlayerBets] Found ${allPlayerBetsDetails.length} bets for player ${playerPubkeyStr} in round ${roundNumber}. Already claimed: ${alreadyClaimed}`);
-        // Возвращаем массив ВСЕХ ставок и флаг, был ли клейм
-        res.json({ bets: allPlayerBetsDetails, alreadyClaimed });
-
-    } catch (error) {
-        console.error(`[API PlayerBets] Error fetching bets for player ${playerPubkeyStr}, round ${roundNumber}:`, error);
-        res.status(500).json({ error: 'Internal server error while fetching player bets' });
-    }
-});
-
-// --- НОВЫЙ ЭНДПОИНТ: Проверка и данные для клейма последнего раунда игрока ---
-app.get('/api/latest_bets', async (req, res) => { // <<< ИЗМЕНЕНО НАЗВАНИЕ
-    const { player } = req.query;
-    console.log(`%c[API LatestBets] Request for player: ${player}`, 'color: magenta;'); // <<< ИЗМЕНЕН ЛОГ
-
-    // 1. Валидация Pubkey
-    if (!player) {
-        return res.status(400).json({ error: 'Player public key required' });
-    }
-    let playerPubkey;
-    try {
-        playerPubkey = new PublicKey(player); // Проверяем валидность
-    } catch (e) {
-        console.error(`[API LatestBets] Invalid player public key format: ${player}`); // <<< ИЗМЕНЕН ЛОГ
-        return res.status(400).json({ error: 'Invalid player public key format' });
-    }
-    const playerPubkeyStr = playerPubkey.toBase58(); // Используем строку дальше
-
-    try {
-        // 2. Найти последний раунд с участием игрока
-        const latestBet = await BetModel.findOne({ player: playerPubkeyStr })
-                                       .sort({ round: -1 }) // Сортируем по убыванию раунда
-                                       .lean();
-
-        if (!latestBet) {
-            console.log(`%c[API LatestBets] No bets found for player ${playerPubkeyStr}.`, 'color: magenta;'); // <<< ИЗМЕНЕН ЛОГ
-            return res.json({ claimable: false });
-        }
-        const playerLatestRound = latestBet.round;
-        console.log(`%c[API LatestBets] Player ${playerPubkeyStr} latest participation round: ${playerLatestRound}.`, 'color: magenta;'); // <<< ИЗМЕНЕН ЛОГ
-
-        // 3. Проверить, завершен ли этот раунд
-        const roundData = await RoundPayoutModel.findOne({ round: playerLatestRound }).lean();
-        if (!roundData || roundData.winningNumber === undefined || roundData.winningNumber === null) {
-            console.log(`%c[API LatestBets] Round ${playerLatestRound} is not completed or winning number not found.`, 'color: magenta;'); // <<< ИЗМЕНЕН ЛОГ
-            return res.json({ claimable: false });
-        }
-        const winningNum = roundData.winningNumber;
-        console.log(`%c[API LatestBets] Round ${playerLatestRound} completed. Winning number: ${winningNum}.`, 'color: magenta;'); // <<< ИЗМЕНЕН ЛОГ
-
-        // 4. Проверить, забрал ли игрок выигрыш за этот раунд
-        const existingClaim = await ClaimRecordModel.findOne({ player: playerPubkeyStr, round: playerLatestRound }).lean();
-        if (existingClaim) {
-            console.log(`%c[API LatestBets] Player ${playerPubkeyStr} already claimed winnings for round ${playerLatestRound}.`, 'color: magenta;'); // <<< ИЗМЕНЕН ЛОГ
-            return res.json({ claimable: false });
-        }
-        console.log(`%c[API LatestBets] Player ${playerPubkeyStr} has NOT claimed winnings for round ${playerLatestRound}. Calculating payout...`, 'color: magenta;'); // <<< ИЗМЕНЕН ЛОГ
-
-        // 5. Рассчитать выигрыш за этот раунд
-        const playerBetsInRound = await BetModel.find({ player: playerPubkeyStr, round: playerLatestRound }).lean();
-
-        if (!playerBetsInRound || playerBetsInRound.length === 0) {
-            console.warn(`%c[API LatestBets] Inconsistency: Found latest round ${playerLatestRound} but no bets for player ${playerPubkeyStr}.`, 'color: red;'); // <<< ИЗМЕНЕН ЛОГ
-            return res.json({ claimable: false });
-        }
-
-        let totalPayoutBN = new BN(0);
-        let roundTokenMint = null; // Узнаем минт из ставок
-        const betsDetails = [];
-
-        for (const betRecord of playerBetsInRound) {
-            if (!roundTokenMint) roundTokenMint = betRecord.tokenMint?.toString(); // Берем минт из первой ставки
-            if (typeof betRecord.betAmount !== 'string' || betRecord.betAmount === null) continue;
-            let betAmountBN;
-            try { betAmountBN = new BN(betRecord.betAmount); } catch { continue; }
-
-            const isWinningBet = isBetWinner(betRecord.betType, betRecord.betNumbers || [], winningNum);
-            let payoutAmountBN = new BN(0);
-            if (isWinningBet) {
-                const multiplier = calculatePayoutMultiplier(betRecord.betType);
-                payoutAmountBN = betAmountBN.mul(multiplier);
-                totalPayoutBN = totalPayoutBN.add(payoutAmountBN); // Суммируем общий выигрыш
-            }
-
-            betsDetails.push({
-                round: playerLatestRound,
-                tokenMint: betRecord.tokenMint?.toString(),
+                tokenMint: betRecord.tokenMint, // Уже строка
                 betType: mapBetTypeEnumToString(betRecord.betType),
                 numbers: betRecord.betNumbers || [],
                 amountBet: betRecord.betAmount,
@@ -701,28 +596,125 @@ app.get('/api/latest_bets', async (req, res) => { // <<< ИЗМЕНЕНО НАЗ
             });
         }
 
-         console.log(`%c[API LatestBets] Calculated total payout for player ${playerPubkeyStr} in round ${playerLatestRound}: ${totalPayoutBN.toString()} lamports.`, 'color: magenta;'); // <<< ИЗМЕНЕН ЛОГ
+        console.log(`[API /api/player-round-bets] Sending ${allPlayerBetsDetails.length} formatted bets for player ${playerPubkeyStr}, round ${roundNumber}. Claimed: ${alreadyClaimed}`); // <<< Лог ответа
+        res.json({ bets: allPlayerBetsDetails, alreadyClaimed });
+
+    } catch (error) {
+        console.error(`[API /api/player-round-bets] Error fetching bets for player ${playerPubkeyStr}, round ${roundNumber}:`, error); // <<< Лог ошибки
+        res.status(500).json({ error: 'Internal server error while fetching player bets' });
+    }
+});
+
+// --- НОВЫЙ ЭНДПОИНТ: Проверка и данные для клейма последнего раунда игрока ---
+app.get('/api/latest_bets', async (req, res) => {
+    const { player } = req.query;
+    // Используем старый цветной лог для этого эндпоинта
+    console.log(`%c[API LatestBets] Request for player: ${player}`, 'color: magenta;');
+
+    // 1. Валидация Pubkey
+    if (!player) {
+         console.warn(`%c[API LatestBets] Player public key missing.`, 'color: orange;');
+        return res.status(400).json({ error: 'Player public key required' });
+    }
+    let playerPubkey;
+    try {
+        playerPubkey = new PublicKey(player);
+    } catch (e) {
+        console.warn(`%c[API LatestBets] Invalid player public key format: ${player}`, 'color: orange;');
+        return res.status(400).json({ error: 'Invalid player public key format' });
+    }
+    const playerPubkeyStr = playerPubkey.toBase58();
+
+    try {
+        // 2. Найти последний раунд с участием игрока
+        const latestBet = await BetModel.findOne({ player: playerPubkeyStr })
+                                       .sort({ round: -1 })
+                                       .lean();
+
+        if (!latestBet) {
+            console.log(`%c[API LatestBets] No bets found for player ${playerPubkeyStr}. Sending claimable: false.`, 'color: magenta;');
+            return res.json({ claimable: false });
+        }
+        const playerLatestRound = latestBet.round;
+        console.log(`%c[API LatestBets] Player ${playerPubkeyStr} latest participation round: ${playerLatestRound}. Checking completion...`, 'color: magenta;');
+
+        // 3. Проверить, завершен ли этот раунд
+        const roundData = await RoundPayoutModel.findOne({ round: playerLatestRound }).lean();
+        if (!roundData || roundData.winningNumber === undefined || roundData.winningNumber === null) {
+            console.log(`%c[API LatestBets] Round ${playerLatestRound} is not completed or winning number not found. Sending claimable: false.`, 'color: magenta;');
+            return res.json({ claimable: false });
+        }
+        const winningNum = roundData.winningNumber;
+        console.log(`%c[API LatestBets] Round ${playerLatestRound} completed. Winning number: ${winningNum}. Checking claim status...`, 'color: magenta;');
+
+        // 4. Проверить, забрал ли игрок выигрыш за этот раунд
+        const existingClaim = await ClaimRecordModel.findOne({ player: playerPubkeyStr, round: playerLatestRound }).lean();
+        if (existingClaim) {
+            console.log(`%c[API LatestBets] Player ${playerPubkeyStr} already claimed winnings for round ${playerLatestRound}. Sending claimable: false.`, 'color: magenta;');
+            return res.json({ claimable: false });
+        }
+        console.log(`%c[API LatestBets] Player ${playerPubkeyStr} has NOT claimed winnings for round ${playerLatestRound}. Calculating payout...`, 'color: magenta;');
+
+        // 5. Рассчитать выигрыш за этот раунд
+        const playerBetsInRound = await BetModel.find({ player: playerPubkeyStr, round: playerLatestRound }).lean();
+
+        if (!playerBetsInRound || playerBetsInRound.length === 0) {
+            console.warn(`%c[API LatestBets] Inconsistency: Found latest round ${playerLatestRound} but no bets for player ${playerPubkeyStr}. Sending claimable: false.`, 'color: red;');
+            return res.json({ claimable: false });
+        }
+
+        let totalPayoutBN = new BN(0);
+        let roundTokenMint = null;
+        const betsDetails = [];
+
+        for (const betRecord of playerBetsInRound) {
+            if (!roundTokenMint) roundTokenMint = betRecord.tokenMint; // Строка из БД
+            if (typeof betRecord.betAmount !== 'string' || betRecord.betAmount === null) continue;
+            let betAmountBN;
+            try { betAmountBN = new BN(betRecord.betAmount); } catch { continue; }
+
+            const isWinningBet = isBetWinner(betRecord.betType, betRecord.betNumbers || [], winningNum);
+            let payoutAmountBN = new BN(0);
+            if (isWinningBet) {
+                const multiplier = calculatePayoutMultiplier(betRecord.betType);
+                payoutAmountBN = betAmountBN.mul(multiplier);
+                totalPayoutBN = totalPayoutBN.add(payoutAmountBN);
+            }
+
+            betsDetails.push({
+                round: playerLatestRound,
+                tokenMint: betRecord.tokenMint, // Строка
+                betType: mapBetTypeEnumToString(betRecord.betType),
+                numbers: betRecord.betNumbers || [],
+                amountBet: betRecord.betAmount,
+                isWinning: isWinningBet,
+                payoutAmount: payoutAmountBN.toString(),
+                signature: betRecord.signature,
+                timestamp: new Date(betRecord.timestamp).getTime(),
+            });
+        }
+
+         console.log(`%c[API LatestBets] Calculated total payout for player ${playerPubkeyStr} in round ${playerLatestRound}: ${totalPayoutBN.toString()} lamports.`, 'color: magenta;');
 
         // 6. Вернуть результат
-        if (totalPayoutBN.gtn(0)) { // gtn(0) - greater than zero
-            // --- УБРАН ВЫЗОВ getTokenInfo И ПОЛЯ tokenSymbol, tokenDecimals ---
+        if (totalPayoutBN.gtn(0)) {
             const response = {
                 claimable: true,
                 roundNumber: playerLatestRound,
-                tokenMint: roundTokenMint, // Оставляем минт, он нужен для клейма
+                tokenMint: roundTokenMint,
                 totalPayout: totalPayoutBN.toString(),
                 bets: betsDetails
             };
-            console.log(`%c[API LatestBets] Sending claimable response for player ${playerPubkeyStr}:`, 'color: green; font-weight: bold;', response); // <<< ИЗМЕНЕН ЛОГ
+            console.log(`%c[API LatestBets] Sending claimable response for player ${playerPubkeyStr}: claimable=${response.claimable}, round=${response.roundNumber}, mint=${response.tokenMint}, payout=${response.totalPayout}, numBets=${response.bets.length}`, 'color: green; font-weight: bold;');
             return res.json(response);
         } else {
-             console.log(`%c[API LatestBets] Player ${playerPubkeyStr} has no winnings in round ${playerLatestRound}.`, 'color: magenta;'); // <<< ИЗМЕНЕН ЛОГ
+             console.log(`%c[API LatestBets] Player ${playerPubkeyStr} has no winnings in round ${playerLatestRound}. Sending claimable: false.`, 'color: magenta;');
             return res.json({ claimable: false });
         }
 
     } catch (error) {
-        console.error(`%c[API LatestBets] Error processing request for player ${playerPubkeyStr}:`, 'color: red;', error); // <<< ИЗМЕНЕН ЛОГ
-        res.status(500).json({ error: 'Internal server error while checking latest bets' }); // <<< ИЗМЕНЕН ЛОГ
+        console.error(`%c[API LatestBets] Error processing request for player ${playerPubkeyStr}:`, 'color: red;', error);
+        res.status(500).json({ error: 'Internal server error while checking latest bets' });
     }
 });
 
@@ -806,7 +798,7 @@ function mapBetTypeEnumToString(enumValue) {
     const betTypeMapping = [
         'Straight', 'Split', 'Corner', 'Street', 'SixLine',
         'FirstFour', 'Red', 'Black', 'Even', 'Odd', 'Manque',
-        'Passe', 'Columns', 'P12', 'M12', 'D12'
+        'Passe', 'Column', 'P12', 'M12', 'D12'
     ];
     if (enumValue >= 0 && enumValue < betTypeMapping.length) {
         return betTypeMapping[enumValue];
