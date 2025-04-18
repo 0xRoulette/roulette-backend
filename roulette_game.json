@@ -1,5 +1,5 @@
 {
-  "address": "39yLJnQTeKW56z8kK64KReuEHVKiHLGGr3ZKTM6dLJrS",
+  "address": "H6LQiREq646wdYZqVAvu1rrPLdYojMfisRUcwmzRPkrZ",
   "metadata": {
     "name": "roulette_game",
     "version": "0.1.3",
@@ -7,6 +7,183 @@
     "description": "Created with Anchor"
   },
   "instructions": [
+    {
+      "name": "claim_my_winnings",
+      "discriminator": [
+        138,
+        143,
+        240,
+        181,
+        141,
+        252,
+        209,
+        228
+      ],
+      "accounts": [
+        {
+          "name": "player",
+          "docs": [
+            "The player claiming the winnings (signer). Pays for `claim_record` creation if needed."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "game_session",
+          "docs": [
+            "The global game session account. Checked to ensure a winning number exists."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  97,
+                  109,
+                  101,
+                  95,
+                  115,
+                  101,
+                  115,
+                  115,
+                  105,
+                  111,
+                  110
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "player_bets",
+          "docs": [
+            "The player's bets account, containing their LATEST placed bets, vault, and token mint."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  108,
+                  97,
+                  121,
+                  101,
+                  114,
+                  95,
+                  98,
+                  101,
+                  116,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "game_session"
+              },
+              {
+                "kind": "account",
+                "path": "player"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "docs": [
+            "The vault corresponding to the LATEST token_mint used by the player in `player_bets`."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "player_bets.token_mint",
+                "account": "PlayerBets"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault_token_account",
+          "writable": true
+        },
+        {
+          "name": "player_token_account",
+          "writable": true
+        },
+        {
+          "name": "claim_record",
+          "docs": [
+            "A record created to prevent double-claiming for this player and the completed round."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  108,
+                  97,
+                  105,
+                  109,
+                  95,
+                  114,
+                  101,
+                  99,
+                  111,
+                  114,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "player"
+              },
+              {
+                "kind": "account",
+                "path": "game_session.last_completed_round",
+                "account": "GameSession"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program",
+          "docs": [
+            "SPL Token Program."
+          ],
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "docs": [
+            "System Program (for creating `claim_record`)."
+          ],
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "rent",
+          "docs": [
+            "Rent Sysvar (for creating `claim_record`)."
+          ],
+          "address": "SysvarRent111111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
     {
       "name": "close_bets",
       "discriminator": [
@@ -917,6 +1094,19 @@
   ],
   "accounts": [
     {
+      "name": "ClaimRecord",
+      "discriminator": [
+        57,
+        229,
+        0,
+        9,
+        65,
+        62,
+        96,
+        7
+      ]
+    },
+    {
       "name": "GameSession",
       "discriminator": [
         150,
@@ -1273,6 +1463,31 @@
           {
             "name": "close_time",
             "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ClaimRecord",
+      "docs": [
+        "Record to prevent double-claiming winnings for a specific player and round."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "claimed",
+            "docs": [
+              "Whether the winnings for this player/round have been successfully claimed."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "Bump seed for the PDA."
+            ],
+            "type": "u8"
           }
         ]
       }
