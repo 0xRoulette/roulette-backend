@@ -15,7 +15,7 @@ const { QUICKNODE_RPC, MONGO_URI, QUICKNODE_WSS } = require('./config');
 
 // --- Solana Initialization ---
 // !!! IMPORTANT: Ensure this PROGRAM_ID matches your newly deployed contract !!!
-const PROGRAM_ID = new PublicKey("39yLJnQTeKW56z8kK64KReuEHVKiHLGGr3ZKTM6dLJrS");
+const PROGRAM_ID = new PublicKey("6LpW2z3HuCYjuzW73prb7qYH12CynFQmYThvP5dSFG4U");
 const connection = new Connection(QUICKNODE_RPC, {
     wsEndpoint: QUICKNODE_WSS,
     commitment: 'confirmed'
